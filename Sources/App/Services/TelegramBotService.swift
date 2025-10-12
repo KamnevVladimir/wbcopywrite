@@ -35,6 +35,13 @@ final class TelegramBotService: @unchecked Sendable {
     private func handleMessage(_ message: TelegramMessage) async throws {
         let user = try await getOrCreateUser(from: message.from, chatId: message.chat.id)
         
+        // Обработка фото (если есть)
+        if let photos = message.photo, !photos.isEmpty {
+            app.logger.info("📷 Photo from @\(message.from.username ?? "unknown")")
+            try await handlePhotoDescription(photos: photos, caption: message.caption, user: user, chatId: message.chat.id)
+            return
+        }
+        
         guard let text = message.text else { return }
         
         app.logger.info("💬 Message from @\(message.from.username ?? "unknown"): \(text)")
@@ -43,11 +50,8 @@ final class TelegramBotService: @unchecked Sendable {
         if text.starts(with: "/") {
             try await handleCommand(text, user: user, chatId: message.chat.id)
         } else {
-            // TODO: Обработка текста (название товара для генерации)
-            try await sendMessage(
-                chatId: message.chat.id,
-                text: "Используй команды:\n/start - главное меню\n/generate - сгенерировать описание"
-            )
+            // Обработка текста товара для генерации
+            try await handleProductDescription(text: text, user: user, chatId: message.chat.id)
         }
     }
     
@@ -186,6 +190,10 @@ final class TelegramBotService: @unchecked Sendable {
         if data.starts(with: "category_") {
             let category = String(data.dropFirst("category_".count))
             try await handleCategorySelected(category: category, user: user, chatId: chatId)
+        } else if data == "new_generation" {
+            try await handleGenerateCommand(user: user, chatId: chatId)
+        } else if data == "my_balance" {
+            try await handleBalanceCommand(user: user, chatId: chatId)
         }
         
         // Подтвердить callback
@@ -209,6 +217,257 @@ final class TelegramBotService: @unchecked Sendable {
         """
         
         try await sendMessage(chatId: chatId, text: text)
+    }
+    
+    // MARK: - Product Description Generation
+    
+    private func handleProductDescription(text: String, user: User, chatId: Int64) async throws {
+        let repo = UserRepository(database: app.db)
+        
+        // Проверка что категория выбрана
+        guard let categoryRaw = user.selectedCategory,
+              let category = Constants.ProductCategory(rawValue: categoryRaw) else {
+            try await sendMessage(
+                chatId: chatId,
+                text: "⚠️ Сначала выбери категорию товара через /start"
+            )
+            return
+        }
+        
+        // Проверка лимитов
+        guard try await repo.hasGenerationsAvailable(user) else {
+            try await sendMessage(chatId: chatId, text: Constants.BotMessage.limitExceeded)
+            return
+        }
+        
+        // Показать "Генерирую..."
+        try await sendMessage(chatId: chatId, text: Constants.BotMessage.generating)
+        
+        do {
+            // Вызвать Claude API
+            let description = try await app.claude.generateProductDescription(
+                productInfo: text,
+                category: category
+            )
+            
+            // Сохранить в БД
+            let generation = Generation(
+                userId: user.id!,
+                category: category.rawValue,
+                productName: text,
+                productDetails: text,
+                tokensUsed: description.tokensUsed,
+                processingTimeMs: description.processingTimeMs
+            )
+            generation.resultTitle = description.title
+            generation.resultDescription = description.description
+            generation.resultBullets = description.bullets
+            generation.resultHashtags = description.hashtags
+            
+            try await generation.save(on: app.db)
+            
+            // Увеличить счетчик
+            try await repo.incrementGenerations(user)
+            
+            // Отправить результат
+            try await sendGenerationResult(
+                chatId: chatId,
+                description: description,
+                user: user
+            )
+            
+            app.logger.info("✅ Generated description for user \(user.telegramId) in \(description.processingTimeMs)ms")
+            
+        } catch {
+            app.logger.error("❌ Generation error: \(error)")
+            try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
+        }
+    }
+    
+    private func sendGenerationResult(
+        chatId: Int64,
+        description: ClaudeService.ProductDescription,
+        user: User
+    ) async throws {
+        let repo = UserRepository(database: app.db)
+        let remaining = try await repo.getRemainingGenerations(user)
+        
+        let bulletsText = description.bullets.map { "• \($0)" }.joined(separator: "\n")
+        let hashtagsText = description.hashtags.joined(separator: " ")
+        
+        let resultText = """
+        ✅ *Готово!* Вот твоё описание:
+        
+        📝 *Заголовок:*
+        \(description.title)
+        
+        📄 *Описание:*
+        \(description.description)
+        
+        🎯 *Ключевые выгоды:*
+        \(bulletsText)
+        
+        🏷 *Хештеги:*
+        \(hashtagsText)
+        
+        ⚡️ Осталось генераций: *\(remaining)*
+        """
+        
+        // Кнопки для дальнейших действий
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: [
+            [
+                TelegramInlineKeyboardButton(text: "🔄 Новая генерация", callbackData: "new_generation"),
+                TelegramInlineKeyboardButton(text: "💰 Мой баланс", callbackData: "my_balance")
+            ]
+        ])
+        
+        try await sendMessage(chatId: chatId, text: resultText, replyMarkup: keyboard)
+    }
+    
+    // MARK: - Photo Description Generation
+    
+    private func handlePhotoDescription(
+        photos: [TelegramPhotoSize],
+        caption: String?,
+        user: User,
+        chatId: Int64
+    ) async throws {
+        let repo = UserRepository(database: app.db)
+        let plan = try await repo.getCurrentPlan(user)
+        
+        // Проверка Ultra подписки (фото доступно только для Ultra)
+        guard plan == .ultra else {
+            let upgradeText = """
+            📷 *Генерация по фото доступна только в Ultra!*
+            
+            С Ultra подпиской ты получаешь:
+            • ✨ Генерация по фотографиям товара
+            • 🚀 1000 описаний в месяц
+            • ⚡️ Приоритетная обработка
+            • 🎯 Расширенные промпты
+            
+            Цена: *1,499₽/мес*
+            
+            Хочешь попробовать текстовую генерацию? Используй /start
+            """
+            
+            let keyboard = TelegramReplyMarkup(inlineKeyboard: [
+                [TelegramInlineKeyboardButton(text: "⭐️ Купить Ultra", callbackData: "buy_ultra")]
+            ])
+            
+            try await sendMessage(chatId: chatId, text: upgradeText, replyMarkup: keyboard)
+            return
+        }
+        
+        // Проверка что категория выбрана
+        guard let categoryRaw = user.selectedCategory,
+              let category = Constants.ProductCategory(rawValue: categoryRaw) else {
+            try await sendMessage(
+                chatId: chatId,
+                text: "⚠️ Сначала выбери категорию товара через /start"
+            )
+            return
+        }
+        
+        // Проверка лимитов
+        guard try await repo.hasGenerationsAvailable(user) else {
+            try await sendMessage(chatId: chatId, text: Constants.BotMessage.limitExceeded)
+            return
+        }
+        
+        // Показать "Анализирую фото..."
+        try await sendMessage(chatId: chatId, text: "🔍 Анализирую фотографию...\n\nЭто может занять 15-20 секунд.")
+        
+        do {
+            // Получить самое большое фото
+            guard let largestPhoto = photos.max(by: { $0.fileSize ?? 0 < $1.fileSize ?? 0 }) else {
+                throw BotError.telegramAPIError(.badRequest)
+            }
+            
+            // Скачать фото
+            let imageData = try await downloadPhoto(fileId: largestPhoto.fileId)
+            
+            // Вызвать Claude Vision API
+            let additionalContext = caption ?? "Товар без дополнительного описания"
+            let description = try await app.claude.generateProductDescriptionFromPhoto(
+                imageData: imageData,
+                productInfo: additionalContext,
+                category: category
+            )
+            
+            // Сохранить в БД
+            let generation = Generation(
+                userId: user.id!,
+                category: category.rawValue,
+                productName: "Генерация по фото",
+                productDetails: additionalContext,
+                tokensUsed: description.tokensUsed,
+                processingTimeMs: description.processingTimeMs
+            )
+            generation.resultTitle = description.title
+            generation.resultDescription = description.description
+            generation.resultBullets = description.bullets
+            generation.resultHashtags = description.hashtags
+            
+            try await generation.save(on: app.db)
+            
+            // Увеличить счетчик
+            try await repo.incrementGenerations(user)
+            
+            // Отправить результат
+            try await sendGenerationResult(
+                chatId: chatId,
+                description: description,
+                user: user
+            )
+            
+            app.logger.info("✅ Generated description from photo for user \(user.telegramId)")
+            
+        } catch {
+            app.logger.error("❌ Photo generation error: \(error)")
+            try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
+        }
+    }
+    
+    private func downloadPhoto(fileId: String) async throws -> Data {
+        // Получить file_path через getFile API
+        struct GetFileResponse: Content {
+            let ok: Bool
+            let result: FileInfo
+        }
+        
+        struct FileInfo: Content {
+            let filePath: String
+            
+            enum CodingKeys: String, CodingKey {
+                case filePath = "file_path"
+            }
+        }
+        
+        let uri = URI(string: "\(baseURL)/getFile")
+        
+        let response = try await app.client.post(uri) { req in
+            try req.content.encode(["file_id": fileId])
+        }
+        
+        guard response.status == .ok else {
+            throw BotError.telegramAPIError(response.status)
+        }
+        
+        let fileResponse = try response.content.decode(GetFileResponse.self)
+        
+        // Скачать файл
+        let fileURL = "https://api.telegram.org/file/bot\(botToken)/\(fileResponse.result.filePath)"
+        let fileUri = URI(string: fileURL)
+        
+        let fileDataResponse = try await app.client.get(fileUri)
+        
+        guard fileDataResponse.status == .ok,
+              let buffer = fileDataResponse.body else {
+            throw BotError.telegramAPIError(.notFound)
+        }
+        
+        return Data(buffer: buffer)
     }
     
     // MARK: - Helpers

@@ -20,6 +20,8 @@ struct TelegramMessage: Content {
     let chat: TelegramChat
     let date: Int64
     let text: String?
+    let caption: String?
+    let photo: [TelegramPhotoSize]?
     
     enum CodingKeys: String, CodingKey {
         case messageId = "message_id"
@@ -27,6 +29,8 @@ struct TelegramMessage: Content {
         case chat
         case date
         case text
+        case caption
+        case photo
     }
 }
 
@@ -59,6 +63,22 @@ struct TelegramChat: Content {
         case username
         case firstName = "first_name"
         case lastName = "last_name"
+    }
+}
+
+struct TelegramPhotoSize: Content {
+    let fileId: String
+    let fileUniqueId: String
+    let width: Int
+    let height: Int
+    let fileSize: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case fileId = "file_id"
+        case fileUniqueId = "file_unique_id"
+        case width
+        case height
+        case fileSize = "file_size"
     }
 }
 

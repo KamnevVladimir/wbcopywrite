@@ -7,6 +7,7 @@ enum Constants {
         case starter = "starter"
         case business = "business"
         case pro = "pro"
+        case ultra = "ultra"
         
         var name: String {
             switch self {
@@ -14,6 +15,7 @@ enum Constants {
             case .starter: return "Starter"
             case .business: return "Business"
             case .pro: return "Pro"
+            case .ultra: return "Ultra"
             }
         }
         
@@ -23,6 +25,7 @@ enum Constants {
             case .starter: return 299
             case .business: return 599
             case .pro: return 999
+            case .ultra: return 1499
             }
         }
         
@@ -32,19 +35,31 @@ enum Constants {
             case .starter: return 30
             case .business: return 150
             case .pro: return 500
+            case .ultra: return 1000
             }
         }
         
         var description: String {
             switch self {
             case .free:
-                return "3 описания для знакомства с ботом"
+                return "3 описания для знакомства с ботом (только текст)"
             case .starter:
-                return "30 описаний в месяц для небольших селлеров"
+                return "30 описаний в месяц для небольших селлеров (только текст)"
             case .business:
-                return "150 описаний в месяц для активных селлеров"
+                return "150 описаний в месяц для активных селлеров (только текст)"
             case .pro:
-                return "500 описаний в месяц для крупных селлеров и агентств"
+                return "500 описаний в месяц (только текст)"
+            case .ultra:
+                return "1000 описаний в месяц + генерация по фото"
+            }
+        }
+        
+        var supportsPhotoGeneration: Bool {
+            switch self {
+            case .ultra:
+                return true
+            default:
+                return false
             }
         }
     }

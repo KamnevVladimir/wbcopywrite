@@ -70,6 +70,14 @@ public func configure(_ app: Application) async throws {
     // Error handling
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))
     
+    // MARK: - Claude Service
+    
+    let claudeService = ClaudeService(
+        app: app,
+        apiKey: config.claudeApiKey
+    )
+    app.claude = claudeService
+    
     // MARK: - Telegram Bot Service
     
     let botService = TelegramBotService(
