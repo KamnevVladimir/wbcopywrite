@@ -84,7 +84,10 @@ struct TelegramPollingLifecycleHandler: LifecycleHandler {
     
     func didBoot(_ application: Application) throws {
         // Start polling after server is ready
-        pollingService.start()
+        // Задержка чтобы HTTP клиент успел инициализироваться
+        application.eventLoopGroup.next().scheduleTask(in: .seconds(1)) {
+            self.pollingService.start()
+        }
     }
     
     func shutdown(_ application: Application) {

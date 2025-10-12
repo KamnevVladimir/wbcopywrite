@@ -9,16 +9,21 @@ enum Entrypoint {
         var env = try Environment.detect()
         try LoggingSystem.bootstrap(from: &env)
         
-        // Vapor создаёт Application с дефолтными настройками
-        // Мы НЕ хотим чтобы он парсил --port из аргументов командной строки
         let app = try await Application.make(env)
         
         do {
             try await configure(app)
-            
-            // Запустить сервер напрямую без парсинга CLI аргументов
             try await app.asyncBoot()
-            try await app.running?.onStop.get()
+            
+            // Запустить HTTP сервер
+            try app.server.start()
+            
+            app.logger.info("🎉 Application started successfully!")
+            
+            // Ждать сигнала остановки
+            try await app.running!.onStop.get()
+            
+            app.logger.info("👋 Shutting down...")
         } catch {
             app.logger.report(error: error)
             try? await app.asyncShutdown()
