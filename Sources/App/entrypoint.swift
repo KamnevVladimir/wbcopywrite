@@ -13,32 +13,45 @@ enum Entrypoint {
         
         do {
             try await configure(app)
-            try await app.asyncBoot()
             
-            // Запустить HTTP сервер
-            try app.server.start()
+            // Запустить Telegram polling через 2 секунды после boot
+            app.lifecycle.use(TelegramPollingLifecycle(app: app))
             
-            app.logger.info("🎉 Application started successfully!")
-            
-            // Запустить Telegram polling через 2 секунды
-            Task {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                app.telegramPolling.start()
-            }
-            
-            // Бесконечно ждать (приложение работает пока не получит SIGTERM/SIGINT)
-            try await Task.sleep(nanoseconds: UInt64.max)
+            // Использовать стандартный Vapor способ запуска
+            // Vapor автоматически обработает SIGTERM/SIGINT
+            try await app.execute()
             
         } catch {
             app.logger.report(error: error)
-            await app.telegramPolling.stop()
             try? await app.asyncShutdown()
             throw error
         }
+    }
+}
+
+// MARK: - Lifecycle для Telegram Polling
+
+struct TelegramPollingLifecycle: LifecycleHandler {
+    let app: Application
+    
+    func didBoot(_ application: Application) throws {
+        // Запустить polling через 2 секунды
+        application.eventLoopGroup.any().scheduleTask(in: .seconds(2)) {
+            application.telegramPolling.start()
+        }
+    }
+    
+    func shutdown(_ application: Application) {
+        // Graceful shutdown
+        let promise = application.eventLoopGroup.next().makePromise(of: Void.self)
         
-        app.logger.info("👋 Shutting down...")
-        await app.telegramPolling.stop()
-        try await app.asyncShutdown()
+        Task {
+            await application.telegramPolling.stop()
+            promise.succeed(())
+        }
+        
+        // Ждать завершения
+        try? promise.futureResult.wait()
     }
 }
 
