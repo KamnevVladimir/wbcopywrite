@@ -122,54 +122,10 @@ final class TelegramPollingService: @unchecked Sendable {
     // MARK: - Update Handling
     
     private func handleUpdate(_ update: TelegramUpdate) async {
-        do {
-            // TODO: Передать в TelegramBotService для обработки
-            app.logger.info("📬 Processing update #\(update.updateId)")
-            
-            if let message = update.message {
-                app.logger.info("💬 Message from @\(message.from.username ?? "unknown"): \(message.text ?? "")")
-                
-                // Временный ответ (пока нет TelegramBotService)
-                if message.text == "/start" {
-                    try await sendMessage(
-                        chatId: message.chat.id,
-                        text: """
-                        🎯 Привет! Я КарточкаПРО!
-                        
-                        Пока в разработке, но скоро буду генерировать 
-                        крутые описания для твоих товаров! 🚀
-                        
-                        Stay tuned!
-                        """
-                    )
-                }
-            }
-            
-            if let callback = update.callbackQuery {
-                app.logger.info("🔘 Callback from @\(callback.from.username ?? "unknown"): \(callback.data ?? "")")
-            }
-            
-        } catch {
-            app.logger.error("❌ Failed to handle update #\(update.updateId): \(error)")
-        }
-    }
-    
-    // MARK: - Send Message (temporary helper)
-    
-    private func sendMessage(chatId: Int64, text: String) async throws {
-        let uri = URI(string: "\(baseURL)/sendMessage")
+        app.logger.info("📬 Processing update #\(update.updateId)")
         
-        let response = try await app.client.post(uri) { req in
-            try req.content.encode(TelegramSendMessage(
-                chatId: chatId,
-                text: text,
-                parseMode: "Markdown"
-            ))
-        }
-        
-        guard response.status == HTTPResponseStatus.ok else {
-            throw PollingError.httpError(response.status)
-        }
+        // Передать в TelegramBotService для обработки
+        await app.telegramBot.handleUpdate(update)
     }
     
     // MARK: - Error Handling

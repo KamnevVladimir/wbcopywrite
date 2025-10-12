@@ -54,6 +54,14 @@ public func configure(_ app: Application) async throws {
     // Error handling
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))
     
+    // MARK: - Telegram Bot Service
+    
+    let botService = TelegramBotService(
+        app: app,
+        botToken: config.telegramBotToken
+    )
+    app.telegramBot = botService
+    
     // MARK: - Telegram Long Polling
     
     let pollingService = TelegramPollingService(
