@@ -59,6 +59,12 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateSubscriptions())
     app.migrations.add(CreateGenerations())
     
+    // Автоматически запускать миграции при старте (для Railway)
+    if app.environment == .production {
+        try await app.autoMigrate()
+        app.logger.info("✅ Database migrations completed")
+    }
+    
     // MARK: - Middleware
     
     // Error handling
