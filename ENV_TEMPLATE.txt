@@ -1,0 +1,50 @@
+# ==============================================
+# Environment Variables Template
+# ==============================================
+# Скопируй это в файл .env в корне проекта
+
+# Application
+ENVIRONMENT=development
+LOG_LEVEL=debug
+
+# Server
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8080
+
+# Database (Local PostgreSQL via Docker)
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=wbcopywriter
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres
+
+# Telegram Bot
+# Получить: https://t.me/botfather -> /newbot
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_WEBHOOK_URL=https://your-ngrok-url.ngrok.io/webhook
+
+# Claude API
+# Получить: https://console.anthropic.com/ -> API Keys
+CLAUDE_API_KEY=your_claude_api_key_here
+CLAUDE_API_URL=https://api.anthropic.com/v1/messages
+CLAUDE_MODEL=claude-3-5-sonnet-20241022
+
+# Tribute (Payments) - пока можно оставить test_key
+TRIBUTE_API_KEY=test_key
+TRIBUTE_SECRET=test_secret
+TRIBUTE_API_URL=https://api.tribute.to/v1
+
+# Rate Limiting (лимиты генераций)
+RATE_LIMIT_FREE=3
+RATE_LIMIT_STARTER=30
+RATE_LIMIT_BUSINESS=150
+RATE_LIMIT_PRO=500
+
+# ==============================================
+# Инструкция:
+# 1. Создай файл .env в корне проекта
+# 2. Скопируй это содержимое
+# 3. Замени your_telegram_bot_token_here и your_claude_api_key_here
+# 4. После запуска ngrok обнови TELEGRAM_WEBHOOK_URL
+# ==============================================
+
