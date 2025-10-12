@@ -26,17 +26,18 @@ enum Entrypoint {
                 app.telegramPolling.start()
             }
             
-            // Ждать сигнала остановки
-            try await app.running!.onStop.get()
+            // Бесконечно ждать (приложение работает пока не получит SIGTERM/SIGINT)
+            try await Task.sleep(nanoseconds: UInt64.max)
             
-            app.logger.info("👋 Shutting down...")
-            await app.telegramPolling.stop()
         } catch {
             app.logger.report(error: error)
+            await app.telegramPolling.stop()
             try? await app.asyncShutdown()
             throw error
         }
         
+        app.logger.info("👋 Shutting down...")
+        await app.telegramPolling.stop()
         try await app.asyncShutdown()
     }
 }
