@@ -2,7 +2,7 @@ import Vapor
 
 /// Telegram Long Polling Service
 /// Профессиональная реализация с error handling, graceful shutdown и exponential backoff
-final class TelegramPollingService {
+final class TelegramPollingService: @unchecked Sendable {
     private let app: Application
     private let botToken: String
     private let baseURL: String
@@ -94,15 +94,21 @@ final class TelegramPollingService {
     private func getUpdates() async throws -> [TelegramUpdate] {
         let uri = URI(string: "\(baseURL)/getUpdates")
         
-        let response = try await app.client.post(uri) { req in
-            try req.content.encode([
-                "offset": offset,
-                "timeout": 30, // Long polling timeout (seconds)
-                "allowed_updates": ["message", "callback_query"]
-            ])
+        struct GetUpdatesRequest: Content {
+            let offset: Int64
+            let timeout: Int
+            let allowed_updates: [String]
         }
         
-        guard response.status == .ok else {
+        let response = try await app.client.post(uri) { req in
+            try req.content.encode(GetUpdatesRequest(
+                offset: offset,
+                timeout: 30,
+                allowed_updates: ["message", "callback_query"]
+            ))
+        }
+        
+        guard response.status == HTTPResponseStatus.ok else {
             throw PollingError.httpError(response.status)
         }
         
@@ -117,12 +123,16 @@ final class TelegramPollingService {
     
     private func deleteWebhook() async {
         do {
-            let uri = URI(string: "\(baseURL)/deleteWebhook")
-            let response = try await app.client.post(uri) { req in
-                try req.content.encode(["drop_pending_updates": false])
+            struct DeleteWebhookRequest: Content {
+                let drop_pending_updates: Bool
             }
             
-            if response.status == .ok {
+            let uri = URI(string: "\(baseURL)/deleteWebhook")
+            let response = try await app.client.post(uri) { req in
+                try req.content.encode(DeleteWebhookRequest(drop_pending_updates: false))
+            }
+            
+            if response.status == HTTPResponseStatus.ok {
                 app.logger.info("🗑️  Webhook deleted (switched to polling)")
             }
         } catch {
@@ -178,7 +188,7 @@ final class TelegramPollingService {
             ))
         }
         
-        guard response.status == .ok else {
+        guard response.status == HTTPResponseStatus.ok else {
             throw PollingError.httpError(response.status)
         }
     }

@@ -1,6 +1,7 @@
 import Vapor
 import Fluent
 import FluentPostgresDriver
+import PostgresKit
 
 public func configure(_ app: Application) async throws {
     // Load environment config
@@ -17,16 +18,15 @@ public func configure(_ app: Application) async throws {
         app.logger.info("📦 Database connected via DATABASE_URL")
     } else {
         // Development: Use separate variables
-        app.databases.use(
-            .postgres(
-                hostname: config.databaseHost,
-                port: config.databasePort,
-                username: config.databaseUsername,
-                password: config.databasePassword,
-                database: config.databaseName
-            ),
-            as: .psql
+        let postgresConfig = SQLPostgresConfiguration(
+            hostname: config.databaseHost,
+            port: config.databasePort,
+            username: config.databaseUsername,
+            password: config.databasePassword,
+            database: config.databaseName,
+            tls: .disable
         )
+        app.databases.use(.postgres(configuration: postgresConfig), as: .psql)
         app.logger.info("📦 Database connected: \(config.databaseHost):\(config.databasePort)/\(config.databaseName)")
     }
     
