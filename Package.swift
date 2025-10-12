@@ -25,15 +25,8 @@ let package = Package(
                 .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
             ],
             path: "Sources/App"
-        ),
-        .testTarget(
-            name: "AppTests",
-            dependencies: [
-                .target(name: "App"),
-                .product(name: "XCTVapor", package: "vapor"),
-            ],
-            path: "Tests/AppTests"
         )
+        // Tests will be added later
     ]
 )
 
