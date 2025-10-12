@@ -22,3 +22,4 @@ struct CreateSubscriptions: AsyncMigration {
     }
 }
 
+

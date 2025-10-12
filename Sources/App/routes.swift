@@ -38,6 +38,6 @@ func routes(_ app: Application) throws {
         return .ok
     }
     
-    app.logger.info("🛣️  Routes configured (polling mode, no telegram webhook)")
+    app.logger.info("🛣️  Routes configured (long polling mode)")
 }
 

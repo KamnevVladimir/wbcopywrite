@@ -33,9 +33,7 @@ final class TelegramPollingService: @unchecked Sendable {
         isRunning = true
         app.logger.info("🚀 Starting Telegram long polling...")
         
-        // Удалить webhook если был установлен
         Task {
-            await deleteWebhook()
             await startPolling()
         }
     }
@@ -119,25 +117,6 @@ final class TelegramPollingService: @unchecked Sendable {
         }
         
         return updates
-    }
-    
-    private func deleteWebhook() async {
-        do {
-            struct DeleteWebhookRequest: Content {
-                let drop_pending_updates: Bool
-            }
-            
-            let uri = URI(string: "\(baseURL)/deleteWebhook")
-            let response = try await app.client.post(uri) { req in
-                try req.content.encode(DeleteWebhookRequest(drop_pending_updates: false))
-            }
-            
-            if response.status == HTTPResponseStatus.ok {
-                app.logger.info("🗑️  Webhook deleted (switched to polling)")
-            }
-        } catch {
-            app.logger.warning("⚠️ Failed to delete webhook: \(error)")
-        }
     }
     
     // MARK: - Update Handling
