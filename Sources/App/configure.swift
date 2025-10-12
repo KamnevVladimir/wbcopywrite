@@ -2,6 +2,7 @@ import Vapor
 import Fluent
 import FluentPostgresDriver
 import PostgresKit
+import NIOSSL
 
 public func configure(_ app: Application) async throws {
     // Load environment config
@@ -27,10 +28,19 @@ public func configure(_ app: Application) async throws {
     if let databaseURL = Environment.get("DATABASE_URL") {
         // Production: Parse DATABASE_URL (Railway format)
         // postgres://user:password@host:port/database
-        try app.databases.use(.postgres(url: databaseURL), as: .psql)
-        app.logger.info("📦 Database connected via DATABASE_URL")
+        // Railway требует SSL но с разрешением самоподписанных сертификатов
+        var tlsConfig = TLSConfiguration.makeClientConfiguration()
+        tlsConfig.certificateVerification = .none
+        
+        let nioSSLContext = try NIOSSLContext(configuration: tlsConfig)
+        
+        var postgresConfig = try SQLPostgresConfiguration(url: databaseURL)
+        postgresConfig.coreConfiguration.tls = .require(nioSSLContext)
+        
+        app.databases.use(.postgres(configuration: postgresConfig), as: .psql)
+        app.logger.info("📦 Database connected via DATABASE_URL (SSL enabled)")
     } else {
-        // Development: Use separate variables
+        // Development: Use separate variables without SSL
         let postgresConfig = SQLPostgresConfiguration(
             hostname: config.databaseHost,
             port: config.databasePort,
