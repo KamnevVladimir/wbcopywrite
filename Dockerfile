@@ -43,14 +43,13 @@ COPY --from=build --chown=vapor:vapor /build/.build/release /app
 # Set user
 USER vapor:vapor
 
-# Expose port
+# Expose port (Railway will use PORT env var)
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/health || exit 1
+# Note: Railway doesn't support HEALTHCHECK in Dockerfile
+# Health checks are configured in Railway dashboard
 
 # Run the app
 ENTRYPOINT ["./App"]
-CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+CMD ["serve", "--env", "production", "--hostname", "0.0.0.0"]
 

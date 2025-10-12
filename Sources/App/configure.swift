@@ -8,6 +8,19 @@ public func configure(_ app: Application) async throws {
     app.environmentConfig = try EnvironmentConfig.load()
     let config = app.environmentConfig
     
+    // MARK: - Server Configuration
+    
+    // Railway provides PORT environment variable
+    if let portString = Environment.get("PORT"), let port = Int(portString) {
+        app.http.server.configuration.port = port
+        app.logger.info("🌐 Server will listen on port: \(port)")
+    } else {
+        app.http.server.configuration.port = 8080
+        app.logger.info("🌐 Server will listen on default port: 8080")
+    }
+    
+    app.http.server.configuration.hostname = "0.0.0.0"
+    
     // MARK: - Database Configuration
     
     // Railway uses DATABASE_URL, local uses separate variables
