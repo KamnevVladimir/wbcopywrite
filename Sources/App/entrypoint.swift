@@ -20,10 +20,17 @@ enum Entrypoint {
             
             app.logger.info("🎉 Application started successfully!")
             
+            // Запустить Telegram polling через 2 секунды
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                app.telegramPolling.start()
+            }
+            
             // Ждать сигнала остановки
             try await app.running!.onStop.get()
             
             app.logger.info("👋 Shutting down...")
+            await app.telegramPolling.stop()
         } catch {
             app.logger.report(error: error)
             try? await app.asyncShutdown()

@@ -62,11 +62,6 @@ public func configure(_ app: Application) async throws {
     )
     app.telegramPolling = pollingService
     
-    // Start polling after server starts
-    app.lifecycle.use(
-        TelegramPollingLifecycleHandler(pollingService: pollingService)
-    )
-    
     // MARK: - Routes
     
     try routes(app)
@@ -75,27 +70,5 @@ public func configure(_ app: Application) async throws {
     app.logger.info("🌍 Environment: \(config.environment)")
     app.logger.info("📝 Log level: \(config.logLevel)")
     app.logger.info("🤖 Bot: @kartochka_pro (polling mode)")
-}
-
-// MARK: - Lifecycle Handler
-
-struct TelegramPollingLifecycleHandler: LifecycleHandler {
-    let pollingService: TelegramPollingService
-    
-    func didBoot(_ application: Application) throws {
-        // Start polling after server is ready
-        // Небольшая задержка чтобы HTTP клиент точно инициализировался
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 секунды
-            self.pollingService.start()
-        }
-    }
-    
-    func shutdown(_ application: Application) {
-        // Graceful shutdown
-        Task {
-            await pollingService.stop()
-        }
-    }
 }
 
