@@ -1023,19 +1023,145 @@ final class TelegramBotService: @unchecked Sendable {
     }
     
     private func handleExportExcel(user: User, chatId: Int64) async throws {
-        // TODO: Реализовать Excel export через библиотеку
-        try await sendMessage(
+        // Получить последнюю генерацию
+        let lastGeneration = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .first()
+        
+        guard let generation = lastGeneration,
+              let title = generation.resultTitle,
+              let description = generation.resultDescription,
+              let bullets = generation.resultBullets,
+              let hashtags = generation.resultHashtags else {
+            try await sendMessage(
+                chatId: chatId,
+                text: "❌ Нет данных для экспорта. Создай описание сначала!"
+            )
+            return
+        }
+        
+        // Создаём CSV контент (совместимый с Excel)
+        let csvContent = generateCSVContent(generation: generation)
+        
+        // Отправляем как документ
+        try await sendDocument(
             chatId: chatId,
-            text: "📊 Excel экспорт в разработке! Пока используй TXT формат."
+            content: csvContent,
+            filename: "opisanie_\(generation.id?.uuidString.prefix(8) ?? "export").csv",
+            caption: "📊 Твоё описание в Excel формате!"
         )
+        
+        app.logger.info("✅ Exported generation \(generation.id?.uuidString ?? "unknown") to CSV for user \(user.telegramId)")
     }
     
     private func handleExportAllExcel(user: User, chatId: Int64) async throws {
-        // TODO: Реализовать массовый Excel export
-        try await sendMessage(
+        // Получить все генерации пользователя
+        let generations = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .all()
+        
+        guard !generations.isEmpty else {
+            try await sendMessage(
+                chatId: chatId,
+                text: "❌ Нет данных для экспорта. Создай описания сначала!"
+            )
+            return
+        }
+        
+        try await sendMessage(chatId: chatId, text: "⏳ Формирую Excel файл с \(generations.count) описаниями...")
+        
+        // Создаём CSV контент со всеми генерациями
+        let csvContent = generateCSVContentAll(generations: generations)
+        
+        // Отправляем как документ
+        try await sendDocument(
             chatId: chatId,
-            text: "📊 Массовый Excel экспорт в разработке!\n\nПока доступен экспорт последнего описания через /history"
+            content: csvContent,
+            filename: "all_descriptions_\(Date().timeIntervalSince1970).csv",
+            caption: "📊 Все твои описания (\(generations.count) шт) в Excel!"
         )
+        
+        app.logger.info("✅ Exported \(generations.count) generations to CSV for user \(user.telegramId)")
+    }
+    
+    // MARK: - Excel/CSV Generation
+    
+    private func generateCSVContent(generation: Generation) -> String {
+        var csv = ""
+        
+        // BOM для правильной кодировки в Excel
+        csv += "\u{FEFF}"
+        
+        // Заголовки
+        csv += "Поле,Значение\n"
+        
+        // Данные
+        csv += escapeCSV("Товар") + "," + escapeCSV(generation.productName) + "\n"
+        csv += escapeCSV("Категория") + "," + escapeCSV(generation.category) + "\n"
+        csv += escapeCSV("Заголовок") + "," + escapeCSV(generation.resultTitle ?? "") + "\n"
+        csv += escapeCSV("Описание") + "," + escapeCSV(generation.resultDescription ?? "") + "\n"
+        
+        // Выгоды (объединяем)
+        if let bullets = generation.resultBullets {
+            csv += escapeCSV("Ключевые выгоды") + "," + escapeCSV(bullets.joined(separator: "; ")) + "\n"
+        }
+        
+        // Хештеги
+        if let hashtags = generation.resultHashtags {
+            csv += escapeCSV("Хештеги") + "," + escapeCSV(hashtags.joined(separator: " ")) + "\n"
+        }
+        
+        csv += escapeCSV("Дата создания") + "," + escapeCSV(generation.createdAt?.description ?? "") + "\n"
+        
+        return csv
+    }
+    
+    private func generateCSVContentAll(generations: [Generation]) -> String {
+        var csv = ""
+        
+        // BOM для правильной кодировки в Excel
+        csv += "\u{FEFF}"
+        
+        // Заголовки
+        csv += "№,Товар,Категория,Заголовок,Описание,Ключевые выгоды,Хештеги,Дата\n"
+        
+        // Данные
+        for (index, generation) in generations.enumerated() {
+            csv += "\(index + 1),"
+            csv += escapeCSV(generation.productName) + ","
+            csv += escapeCSV(generation.category) + ","
+            csv += escapeCSV(generation.resultTitle ?? "") + ","
+            csv += escapeCSV(generation.resultDescription ?? "") + ","
+            
+            // Выгоды
+            if let bullets = generation.resultBullets {
+                csv += escapeCSV(bullets.joined(separator: "; "))
+            }
+            csv += ","
+            
+            // Хештеги
+            if let hashtags = generation.resultHashtags {
+                csv += escapeCSV(hashtags.joined(separator: " "))
+            }
+            csv += ","
+            
+            csv += escapeCSV(generation.createdAt?.description ?? "")
+            csv += "\n"
+        }
+        
+        return csv
+    }
+    
+    private func escapeCSV(_ field: String) -> String {
+        // Если есть запятые, кавычки или переносы строк - оборачиваем в кавычки
+        if field.contains(",") || field.contains("\"") || field.contains("\n") {
+            // Экранируем кавычки удвоением
+            let escaped = field.replacingOccurrences(of: "\"", with: "\"\"")
+            return "\"\(escaped)\""
+        }
+        return field
     }
     
     private func handleExportTxt(user: User, chatId: Int64) async throws {
