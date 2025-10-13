@@ -94,7 +94,7 @@ final class ClaudeService: @unchecked Sendable {
         let uri = URI(string: "\(baseURL)/messages")
         
         let request = ClaudeRequest(
-            model: "claude-3-5-sonnet-20241022",
+            model: "claude-3-5-sonnet-20240620",
             maxTokens: 2000,
             messages: [
                 ClaudeRequest.Message(role: "user", content: prompt)
@@ -111,6 +111,12 @@ final class ClaudeService: @unchecked Sendable {
         
         guard response.status == HTTPStatus.ok else {
             app.logger.error("❌ Claude API error: \(response.status)")
+            
+            // Логировать полный ответ для отладки
+            if let bodyString = response.body.flatMap({ String(buffer: $0) }) {
+                app.logger.error("Response body: \(bodyString)")
+            }
+            
             throw ClaudeError.apiError(response.status)
         }
         
@@ -161,7 +167,7 @@ final class ClaudeService: @unchecked Sendable {
         }
         
         let request = VisionRequest(
-            model: "claude-3-5-sonnet-20241022",
+            model: "claude-3-5-sonnet-20240620",
             maxTokens: 2000,
             messages: [
                 VisionMessage(
@@ -196,6 +202,12 @@ final class ClaudeService: @unchecked Sendable {
         
         guard response.status == HTTPStatus.ok else {
             app.logger.error("❌ Claude Vision API error: \(response.status)")
+            
+            // Логировать полный ответ для отладки
+            if let bodyString = response.body.flatMap({ String(buffer: $0) }) {
+                app.logger.error("Response body: \(bodyString)")
+            }
+            
             throw ClaudeError.apiError(response.status)
         }
         
