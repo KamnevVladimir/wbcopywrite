@@ -1,73 +1,80 @@
 import Vapor
-import Sentry
 
-/// Сервис для мониторинга и отправки ошибок в GlitchTip/Sentry
+/// Сервис для мониторинга и отправки ошибок в GlitchTip/Sentry через HTTP API
 final class MonitoringService: @unchecked Sendable {
     private let app: Application
     private let dsn: String?
     private var isEnabled: Bool = false
+    private let projectId: String?
+    private let publicKey: String?
+    private let host: String?
     
     init(app: Application) {
         self.app = app
         self.dsn = Environment.get("GLITCHTIP_DSN") ?? Environment.get("SENTRY_DSN")
         
-        if let dsn = dsn, !dsn.isEmpty {
-            configureSentry(dsn: dsn)
-            isEnabled = true
-            app.logger.info("✅ GlitchTip/Sentry monitoring enabled")
+        if let dsn = dsn, let components = Self.parseDSN(dsn) {
+            self.publicKey = components.publicKey
+            self.projectId = components.projectId
+            self.host = components.host
+            self.isEnabled = true
+            app.logger.info("✅ GlitchTip monitoring enabled: \(components.host)/\(components.projectId)")
         } else {
-            app.logger.warning("⚠️ GlitchTip/Sentry DSN not configured (set GLITCHTIP_DSN env var)")
+            self.publicKey = nil
+            self.projectId = nil
+            self.host = nil
+            app.logger.warning("⚠️ GlitchTip DSN not configured")
         }
     }
     
-    private func configureSentry(dsn: String) {
-        SentrySDK.start { options in
-            options.dsn = dsn
-            options.environment = Environment.get("ENVIRONMENT") ?? "production"
-            options.tracesSampleRate = 0.1 // 10% traces
-            options.enableCaptureFailedRequests = true
-            
-            // Фильтруем чувствительные данные
-            options.beforeSend = { event in
-                // Убираем токены и ключи из breadcrumbs
-                event.breadcrumbs = event.breadcrumbs?.map { crumb in
-                    var sanitized = crumb
-                    if var data = crumb.data {
-                        data.removeValue(forKey: "token")
-                        data.removeValue(forKey: "api_key")
-                        sanitized.data = data
-                    }
-                    return sanitized
-                }
-                return event
-            }
+    // Парсинг DSN: https://[key]@glitchtip.com/[project]
+    private static func parseDSN(_ dsn: String) -> (publicKey: String, projectId: String, host: String)? {
+        guard let url = URL(string: dsn),
+              let publicKey = url.user,
+              let host = url.host else {
+            return nil
         }
+        
+        let projectId = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        
+        return (publicKey: publicKey, projectId: projectId, host: host)
     }
     
     // MARK: - Error Tracking
     
     /// Отправить ошибку в GlitchTip
     func captureError(_ error: Error, context: [String: Any] = [:]) {
-        guard isEnabled else { return }
-        
-        SentrySDK.capture(error: error) { scope in
-            for (key, value) in context {
-                scope.setExtra(value: value, key: key)
-            }
+        guard isEnabled, let host = host, let projectId = projectId, let publicKey = publicKey else {
+            return
         }
         
-        app.logger.error("📊 Error sent to GlitchTip: \(error)")
+        let event = SentryEvent(
+            message: error.localizedDescription,
+            level: "error",
+            extra: context
+        )
+        
+        Task {
+            await sendEvent(event, host: host, projectId: projectId, publicKey: publicKey)
+        }
+        
+        app.logger.error("📊 Error logged to GlitchTip: \(error)")
     }
     
     /// Отправить кастомное сообщение
-    func captureMessage(_ message: String, level: SentryLevel = .warning, context: [String: Any] = [:]) {
-        guard isEnabled else { return }
+    func captureMessage(_ message: String, level: String = "warning", context: [String: Any] = [:]) {
+        guard isEnabled, let host = host, let projectId = projectId, let publicKey = publicKey else {
+            return
+        }
         
-        SentrySDK.capture(message: message) { scope in
-            scope.setLevel(level)
-            for (key, value) in context {
-                scope.setExtra(value: value, key: key)
-            }
+        let event = SentryEvent(
+            message: message,
+            level: level,
+            extra: context
+        )
+        
+        Task {
+            await sendEvent(event, host: host, projectId: projectId, publicKey: publicKey)
         }
     }
     
@@ -93,7 +100,7 @@ final class MonitoringService: @unchecked Sendable {
         if creditsAfter < 0 {
             captureMessage(
                 "🚨 CRITICAL: Negative credits detected!",
-                level: .fatal,
+                level: "fatal",
                 context: context
             )
         }
@@ -101,7 +108,7 @@ final class MonitoringService: @unchecked Sendable {
         if creditsAfter > 10000 {
             captureMessage(
                 "⚠️ WARNING: Suspiciously high credits",
-                level: .warning,
+                level: "warning",
                 context: context
             )
         }
@@ -111,7 +118,7 @@ final class MonitoringService: @unchecked Sendable {
         if delta > 100 {
             captureMessage(
                 "📊 Large credit change detected",
-                level: .info,
+                level: "info",
                 context: context
             )
         }
@@ -125,7 +132,7 @@ final class MonitoringService: @unchecked Sendable {
         success: Bool,
         isDuplicate: Bool = false
     ) {
-        let level: SentryLevel = isDuplicate ? .warning : (success ? .info : .error)
+        let level = isDuplicate ? "warning" : (success ? "info" : "error")
         let message = isDuplicate
             ? "💳 Duplicate payment webhook detected"
             : (success ? "💰 Payment successful" : "❌ Payment failed")
@@ -160,7 +167,7 @@ final class MonitoringService: @unchecked Sendable {
         if processingTimeMs > 30000 {
             captureMessage(
                 "⏱️ Slow generation detected",
-                level: .warning,
+                level: "warning",
                 context: [
                     "user_id": userId,
                     "type": type.rawValue,
@@ -170,13 +177,66 @@ final class MonitoringService: @unchecked Sendable {
         }
     }
     
+    // MARK: - HTTP Sender
+    
+    private func sendEvent(_ event: SentryEvent, host: String, projectId: String, publicKey: String) async {
+        let url = "https://\(host)/api/\(projectId)/store/"
+        let uri = URI(string: url)
+        
+        do {
+            let timestamp = Int(Date().timeIntervalSince1970)
+            
+            struct GlitchTipPayload: Content {
+                let eventId: String
+                let timestamp: Int
+                let platform: String
+                let level: String
+                let message: String
+                let environment: String
+                
+                enum CodingKeys: String, CodingKey {
+                    case eventId = "event_id"
+                    case timestamp
+                    case platform
+                    case level
+                    case message
+                    case environment
+                }
+            }
+            
+            let payload = GlitchTipPayload(
+                eventId: UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+                timestamp: timestamp,
+                platform: "swift",
+                level: event.level,
+                message: event.message,
+                environment: Environment.get("ENVIRONMENT") ?? "production"
+            )
+            
+            _ = try await app.client.post(uri) { req in
+                req.headers.add(name: "X-Sentry-Auth", value: "Sentry sentry_version=7, sentry_key=\(publicKey), sentry_client=kartochkapro/1.0")
+                req.headers.contentType = .json
+                try req.content.encode(payload)
+            }
+            
+        } catch {
+            app.logger.error("❌ Failed to send event to GlitchTip: \(error)")
+        }
+    }
+    
     // MARK: - Types
     
+    private struct SentryEvent {
+        let message: String
+        let level: String
+        let extra: [String: Any]
+    }
+    
     enum CreditOperation: String {
-        case charge = "charge"        // Списание
-        case refund = "refund"        // Возврат
-        case purchase = "purchase"    // Покупка
-        case rollback = "rollback"    // Откат
+        case charge = "charge"
+        case refund = "refund"
+        case purchase = "purchase"
+        case rollback = "rollback"
     }
     
     enum GenerationType: String {
@@ -206,4 +266,3 @@ extension Application {
         }
     }
 }
-
