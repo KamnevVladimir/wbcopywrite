@@ -1,7 +1,7 @@
 import Vapor
 
 /// Главный координатор бота - делегирует работу специализированным сервисам
-final class TelegramBotServiceRefactored: @unchecked Sendable {
+final class TelegramBotService: @unchecked Sendable {
     private let app: Application
     private let botToken: String
     
@@ -82,19 +82,19 @@ final class TelegramBotServiceRefactored: @unchecked Sendable {
 // MARK: - Application Extension
 
 extension Application {
-    private struct TelegramBotServiceRefactoredKey: StorageKey {
-        typealias Value = TelegramBotServiceRefactored
+    private struct TelegramBotServiceKey: StorageKey {
+        typealias Value = TelegramBotService
     }
     
-    var telegramBotRefactored: TelegramBotServiceRefactored {
+    var telegramBot: TelegramBotService {
         get {
-            guard let service = storage[TelegramBotServiceRefactoredKey.self] else {
-                fatalError("TelegramBotServiceRefactored not configured")
+            guard let service = storage[TelegramBotServiceKey.self] else {
+                fatalError("TelegramBotService not configured")
             }
             return service
         }
         set {
-            storage[TelegramBotServiceRefactoredKey.self] = newValue
+            storage[TelegramBotServiceKey.self] = newValue
         }
     }
 }
