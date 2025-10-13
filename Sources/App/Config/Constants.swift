@@ -141,6 +141,7 @@ enum Constants {
         case home = "home"
         case beauty = "beauty"
         case sports = "sports"
+        case other = "other"
         
         var emoji: String {
             switch self {
@@ -149,6 +150,7 @@ enum Constants {
             case .home: return "🏠"
             case .beauty: return "💄"
             case .sports: return "⚽️"
+            case .other: return "✏️"
             }
         }
         
@@ -159,6 +161,7 @@ enum Constants {
             case .home: return "Дом и сад"
             case .beauty: return "Красота и здоровье"
             case .sports: return "Спорт и отдых"
+            case .other: return "Другое"
             }
         }
         
