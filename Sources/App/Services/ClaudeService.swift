@@ -9,6 +9,10 @@ final class ClaudeService: @unchecked Sendable {
     init(app: Application, apiKey: String) {
         self.app = app
         self.apiKey = apiKey
+        
+        // Логируем что ключ загружен (без показа самого ключа!)
+        let keyPreview = String(apiKey.prefix(10))
+        app.logger.info("🔑 Claude API key loaded: \(keyPreview)...")
     }
     
     // MARK: - Public API
@@ -94,7 +98,7 @@ final class ClaudeService: @unchecked Sendable {
         let uri = URI(string: "\(baseURL)/messages")
         
         let request = ClaudeRequest(
-            model: "claude-3-5-sonnet-latest",
+            model: "claude-3-5-sonnet-20241022",
             maxTokens: 2000,
             messages: [
                 ClaudeRequest.Message(role: "user", content: prompt)
@@ -188,7 +192,7 @@ final class ClaudeService: @unchecked Sendable {
         }
         
         let request = VisionRequest(
-            model: "claude-3-5-sonnet-latest",
+            model: "claude-3-5-sonnet-20241022",
             maxTokens: 2000,
             messages: [
                 VisionMessage(
