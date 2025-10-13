@@ -1,66 +1,105 @@
 import Foundation
 
 enum Constants {
-    // Subscription plans
+    // Subscription plans - пакетная модель
     enum SubscriptionPlan: String, CaseIterable {
         case free = "free"
-        case starter = "starter"
-        case business = "business"
-        case pro = "pro"
-        case ultra = "ultra"
+        case small = "small"
+        case medium = "medium"
+        case large = "large"
+        case max = "max"
         
         var name: String {
             switch self {
             case .free: return "Free"
-            case .starter: return "Starter"
-            case .business: return "Business"
-            case .pro: return "Pro"
-            case .ultra: return "Ultra"
+            case .small: return "Малый"
+            case .medium: return "Средний"
+            case .large: return "Большой"
+            case .max: return "Максимальный"
+            }
+        }
+        
+        var emoji: String {
+            switch self {
+            case .free: return "🎁"
+            case .small: return "📦"
+            case .medium: return "📦📦"
+            case .large: return "📦📦📦"
+            case .max: return "🎁💎"
             }
         }
         
         var price: Decimal {
             switch self {
             case .free: return 0
-            case .starter: return 299
-            case .business: return 599
-            case .pro: return 999
-            case .ultra: return 1499
+            case .small: return 299
+            case .medium: return 599
+            case .large: return 999
+            case .max: return 1399
             }
         }
         
-        var generationsLimit: Int {
+        var textGenerationsLimit: Int {
             switch self {
             case .free: return 3
-            case .starter: return 30
-            case .business: return 150
-            case .pro: return 500
-            case .ultra: return 1000
+            case .small: return 17
+            case .medium: return 45
+            case .large: return 90
+            case .max: return 180
             }
+        }
+        
+        var photoGenerationsLimit: Int {
+            switch self {
+            case .free: return 1
+            case .small: return 3
+            case .medium: return 5
+            case .large: return 10
+            case .max: return 20
+            }
+        }
+        
+        var totalGenerationsLimit: Int {
+            return textGenerationsLimit + photoGenerationsLimit
+        }
+        
+        var pricePerGeneration: Decimal {
+            guard price > 0 else { return 0 }
+            return price / Decimal(totalGenerationsLimit)
         }
         
         var description: String {
             switch self {
             case .free:
-                return "3 описания для знакомства с ботом (только текст)"
-            case .starter:
-                return "30 описаний в месяц для небольших селлеров (только текст)"
-            case .business:
-                return "150 описаний в месяц для активных селлеров (только текст)"
-            case .pro:
-                return "500 описаний в месяц (только текст)"
-            case .ultra:
-                return "1000 описаний в месяц + генерация по фото"
+                return "4 описания (3 текста + 1 фото)"
+            case .small:
+                return "20 описаний (17 текстов + 3 фото)"
+            case .medium:
+                return "50 описаний (45 текстов + 5 фото)"
+            case .large:
+                return "100 описаний (90 текстов + 10 фото)"
+            case .max:
+                return "200 описаний (180 текстов + 20 фото)"
+            }
+        }
+        
+        var targetAudience: String {
+            switch self {
+            case .free:
+                return "Попробовать бота"
+            case .small:
+                return "1-5 товаров/неделя"
+            case .medium:
+                return "10-15 товаров/неделя"
+            case .large:
+                return "20-30 товаров/неделя"
+            case .max:
+                return "30+ товаров/неделя, агентства"
             }
         }
         
         var supportsPhotoGeneration: Bool {
-            switch self {
-            case .ultra:
-                return true
-            default:
-                return false
-            }
+            return true // Все пакеты поддерживают фото!
         }
     }
     
@@ -124,6 +163,12 @@ enum Constants {
         }
     }
     
+    // Support
+    enum Support {
+        static let telegramContact = "https://t.me/deedeepapp"
+        static let username = "@deedeepapp"
+    }
+    
     // Bot messages
     enum BotMessage {
         static let welcome = """
@@ -143,14 +188,12 @@ enum Constants {
         """
         
         static let enterProductInfo = """
-        Отлично! Теперь опиши товар:
+        Отлично! Теперь опиши товар или отправь ФОТО 📷
         
-        Пример:
-        Название: Женские кроссовки Nike Air Max
-        Материал: текстиль, резина
-        Цвет: белый, черный
-        Размеры: 36-41
-        Особенности: дышащие, легкие, амортизация
+        *Пример:*
+        _Женские кроссовки Nike Air Max, текстиль/резина, белые/черные, 36-41, дышащие, легкие_
+        
+        Или просто отправь фото товара!
         """
         
         static let generating = """

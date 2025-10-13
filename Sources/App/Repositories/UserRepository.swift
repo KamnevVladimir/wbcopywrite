@@ -87,6 +87,12 @@ struct UserRepository {
         try await user.update(on: database)
     }
     
+    /// Увеличить счетчик фото генераций
+    func incrementPhotoGenerations(_ user: User) async throws {
+        user.photoGenerationsUsed += 1
+        try await user.update(on: database)
+    }
+    
     // MARK: - Queries
     
     /// Получить текущий план подписки
@@ -94,14 +100,25 @@ struct UserRepository {
         try await user.currentPlan(on: database)
     }
     
-    /// Получить количество оставшихся генераций
+    /// Получить количество оставшихся текстовых генераций
     func getRemainingGenerations(_ user: User) async throws -> Int {
         try await user.remainingGenerations(on: database)
     }
     
-    /// Проверить есть ли лимит на генерации
+    /// Получить количество оставшихся фото генераций
+    func getRemainingPhotoGenerations(_ user: User) async throws -> Int {
+        try await user.remainingPhotoGenerations(on: database)
+    }
+    
+    /// Проверить есть ли лимит на текстовые генерации
     func hasGenerationsAvailable(_ user: User) async throws -> Bool {
         let remaining = try await getRemainingGenerations(user)
+        return remaining > 0
+    }
+    
+    /// Проверить есть ли лимит на фото генерации
+    func hasPhotoGenerationsAvailable(_ user: User) async throws -> Bool {
+        let remaining = try await getRemainingPhotoGenerations(user)
         return remaining > 0
     }
 }

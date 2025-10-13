@@ -72,6 +72,9 @@ final class TelegramBotService: @unchecked Sendable {
         case "/subscribe":
             try await handleSubscribeCommand(user: user, chatId: chatId)
             
+        case "/history":
+            try await handleHistoryCommand(user: user, chatId: chatId)
+            
         case "/cancel":
             try await handleCancelCommand(user: user, chatId: chatId)
             
@@ -88,50 +91,74 @@ final class TelegramBotService: @unchecked Sendable {
     private func handleStartCommand(user: User, chatId: Int64) async throws {
         let repo = UserRepository(database: app.db)
         let plan = try await repo.getCurrentPlan(user)
-        let remaining = try await repo.getRemainingGenerations(user)
+        let remainingText = try await repo.getRemainingGenerations(user)
+        let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
         
         let welcomeText = """
-        👋 Привет, \(user.displayName)!
+        👋 *Привет, \(user.displayName)!*
         
-        🎯 Я КарточкаПРО — твой AI-помощник для создания продающих описаний товаров на Wildberries и Ozon.
+        Я *КарточкаПРО* — AI-копирайтер для WB/Ozon
         
-        📊 Твой план: \(plan.name)
-        Осталось генераций: \(remaining)
+        📊 *Твой пакет:* \(plan.emoji) \(plan.name)
+        Осталось: \(remainingText) текстов + \(remainingPhoto) фото
         
-        🚀 Что я умею:
-        • Генерирую SEO-оптимизированные описания
-        • Создаю цепляющие заголовки
-        • Подбираю ключевые слова и хештеги
-        • Пишу убедительные bullet-points
+        💡 *Пример что я создаю:*
+        
+        До: _"Кроссовки мужские белые"_
+        После: _"Кроссовки мужские Mizuno Wave белые 46 размер спортивные подошва Мишлен"_
+        
+        🚀 *Что я делаю:*
+        ✅ SEO-заголовки (100 символов)
+        ✅ Продающие описания (500 символов)
+        ✅ 5 ключевых выгод (bullets)
+        ✅ 7 хештегов для поиска
+        ✅ Анализ фото товара 📷
+        
+        💰 *Экономия:* Копирайтер 500₽ → Мы 14₽!
         
         Выбери категорию товара:
         """
         
-        let keyboard = createCategoryKeyboard()
+        // Категории + кнопка подписки
+        let categoryKeyboard = createCategoryKeyboard()
+        let subscribeButton = [[
+            TelegramInlineKeyboardButton(text: "💎 Тарифы и цены", callbackData: "view_packages")
+        ]]
+        
+        let fullKeyboard = TelegramReplyMarkup(
+            inlineKeyboard: categoryKeyboard.inlineKeyboard + subscribeButton
+        )
         
         try await sendMessage(
             chatId: chatId,
             text: welcomeText,
-            replyMarkup: keyboard
+            replyMarkup: fullKeyboard
         )
     }
     
     private func handleHelpCommand(chatId: Int64) async throws {
         let helpText = """
-        📖 Как пользоваться ботом:
+        📖 *Как пользоваться:*
         
-        1️⃣ Нажми /generate или выбери категорию
-        2️⃣ Опиши свой товар (название, характеристики)
-        3️⃣ Получи готовое описание за 15 секунд!
+        1️⃣ /start - выбери категорию
+        2️⃣ Отправь описание товара или ФОТО 📷
+        3️⃣ Получи готовое описание за 10 сек!
+        4️⃣ Экспортируй в Excel или TXT
         
-        💡 Команды:
+        💡 *Команды:*
         /start - Главное меню
         /generate - Новое описание
+        /history - Твои описания
         /balance - Проверить остаток
+        /subscribe - Пакеты и цены
         /help - Эта справка
-        /cancel - Отменить действие
+        /cancel - Отменить
         
-        ❓ Вопросы? Пиши @support_kartochka
+        💰 *Тарифы:*
+        От 299₽/мес за 20 описаний
+        = 14.95₽ за описание (vs 500₽ у копирайтера!)
+        
+        ❓ *Вопросы?* \(Constants.Support.username)
         """
         
         try await sendMessage(chatId: chatId, text: helpText)
@@ -176,45 +203,94 @@ final class TelegramBotService: @unchecked Sendable {
         let currentPlan = try await repo.getCurrentPlan(user)
         
         let subscribeText = """
-        💎 *Тарифные планы КарточкаПРО*
+        💎 *ПАКЕТЫ КАРТОЧКАПРО*
         
-        Твой текущий план: *\(currentPlan.name)*
+        Твой текущий: *\(currentPlan.emoji) \(currentPlan.name)*
         
-        📦 *Starter* - 299₽/мес
-        • 30 описаний в месяц
-        • Все категории товаров
-        • SEO-оптимизация
-        • Экономия 95% vs копирайтер!
+        📦 *МАЛЫЙ* - 299₽/мес
+        • 20 описаний (17 текстов + 3 фото)
+        • 14.95₽ за описание
+        • Для 1-5 товаров/неделя
         
-        🚀 *Business* - 599₽/мес
-        • 150 описаний в месяц
-        • Все категории товаров
-        • SEO-оптимизация
-        • Идеально для активных селлеров
+        📦📦 *СРЕДНИЙ* - 599₽/мес
+        • 50 описаний (45 текстов + 5 фото)
+        • 11.98₽ за описание
+        • Для 10-15 товаров/неделя
         
-        💼 *Pro* - 999₽/мес
-        • 500 описаний в месяц
-        • Все категории товаров
-        • Приоритетная обработка
-        • Для крупных селлеров и агентств
+        📦📦📦 *БОЛЬШОЙ* - 999₽/мес
+        • 100 описаний (90 текстов + 10 фото)
+        • 9.99₽ за описание
+        • Для 20-30 товаров/неделя
         
-        ⭐️ *Ultra* - 1,499₽/мес
-        • 1000 описаний в месяц
-        • Генерация по ФОТО 📷
-        • Все категории товаров
-        • Приоритетная поддержка
-        • Для power-селлеров
+        🎁💎 *МАКСИМАЛЬНЫЙ* - 1,399₽/мес
+        • 200 описаний (180 текстов + 20 фото)
+        • 6.99₽ за описание
+        • Для агентств, 30+ товаров/неделя
         
-        💰 *ROI:* 1 описание от копирайтера = 500₽
-        С нашим ботом = 10₽! Экономия 98%!
+        ━━━━━━━━━━━━━━━━━━━
+        💰 *ТВОЯ ЭКОНОМИЯ:*
         
-        ⚠️ Скоро здесь будет оплата через Tribute!
-        Пока можно пользоваться Free планом (3 описания).
+        Копирайтер: 500₽ за описание
+        Малый пакет: 14.95₽ за описание
         
-        Хочешь протестировать? Используй /generate
+        *Экономия: 97%!*
+        
+        Пример (Средний пакет):
+        ❌ Копирайтер: 50 × 500₽ = 25,000₽
+        ✅ КарточкаПРО: 599₽
+        💎 *Экономишь: 24,401₽/мес!*
+        ━━━━━━━━━━━━━━━━━━━
+        
+        ⚠️ Оплата через Tribute скоро!
+        Пока доступен Free пакет.
+        
+        ❓ Вопросы? \(Constants.Support.username)
         """
         
         try await sendMessage(chatId: chatId, text: subscribeText)
+    }
+    
+    private func handleHistoryCommand(user: User, chatId: Int64) async throws {
+        // Получить последние 10 генераций
+        let generations = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .limit(10)
+            .all()
+        
+        guard !generations.isEmpty else {
+            try await sendMessage(
+                chatId: chatId,
+                text: "📜 У тебя пока нет сохранённых описаний.\n\nИспользуй /generate чтобы создать первое!"
+            )
+            return
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "dd MMM, HH:mm"
+        dateFormatter.locale = Locale(identifier: "ru_RU")
+        
+        var historyText = "📜 *Твои описания* (всего: \(generations.count)):\n\n"
+        
+        for (index, gen) in generations.enumerated() {
+            let date = dateFormatter.string(from: gen.createdAt ?? Date())
+            let categoryEmoji = Constants.ProductCategory(rawValue: gen.category)?.emoji ?? "📝"
+            let title = gen.resultTitle?.prefix(40) ?? "Без названия"
+            
+            historyText += "\(index + 1)️⃣ \(date) | \(categoryEmoji)\n"
+            historyText += "_\(title)..._\n\n"
+        }
+        
+        historyText += "━━━━━━━━━━━━━━━━━━━\n"
+        historyText += "Используй /generate для новой генерации\n"
+        historyText += "❓ Вопросы? \(Constants.Support.username)"
+        
+        // Кнопка для экспорта всех в Excel
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: [
+            [TelegramInlineKeyboardButton(text: "📊 Скачать все в Excel", callbackData: "export_all_excel")]
+        ])
+        
+        try await sendMessage(chatId: chatId, text: historyText, replyMarkup: keyboard)
     }
     
     private func handleCancelCommand(user: User, chatId: Int64) async throws {
@@ -250,6 +326,18 @@ final class TelegramBotService: @unchecked Sendable {
         case .category(let categoryRaw):
             try await handleCategorySelected(category: categoryRaw, user: user, chatId: chatId)
             
+        case .quickGenerate(let categoryRaw):
+            // Быстрая генерация - сразу просим текст
+            let repo = UserRepository(database: app.db)
+            try await repo.updateCategory(user, category: categoryRaw)
+            
+            guard let category = Constants.ProductCategory(rawValue: categoryRaw) else { return }
+            
+            try await sendMessage(
+                chatId: chatId,
+                text: "✅ Категория: \(category.displayName)\n\n\(Constants.BotMessage.enterProductInfo)"
+            )
+            
         case .newGeneration:
             try await handleGenerateCommand(user: user, chatId: chatId)
             
@@ -257,10 +345,23 @@ final class TelegramBotService: @unchecked Sendable {
             try await handleBalanceCommand(user: user, chatId: chatId)
             
         case .exportLast:
-            try await handleExportLast(user: user, chatId: chatId)
+            try await handleExportFormatChoice(user: user, chatId: chatId)
+            
+        case .exportFormat(let format):
+            if format == "excel" {
+                try await handleExportExcel(user: user, chatId: chatId)
+            } else {
+                try await handleExportTxt(user: user, chatId: chatId)
+            }
+            
+        case .exportAllExcel:
+            try await handleExportAllExcel(user: user, chatId: chatId)
             
         case .buyPlan(let plan):
             try await handleBuyPlan(plan: plan, user: user, chatId: chatId)
+            
+        case .viewPackages:
+            try await handleSubscribeCommand(user: user, chatId: chatId)
         }
         
         // Подтвердить callback
@@ -383,7 +484,12 @@ final class TelegramBotService: @unchecked Sendable {
         user: User
     ) async throws {
         let repo = UserRepository(database: app.db)
-        let remaining = try await repo.getRemainingGenerations(user)
+        let remainingText = try await repo.getRemainingGenerations(user)
+        let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
+        let plan = try await repo.getCurrentPlan(user)
+        
+        // Получаем текущую категорию
+        let currentCategory = user.selectedCategory.flatMap { Constants.ProductCategory(rawValue: $0) }
         
         let bulletsText = description.bullets.map { "• \($0)" }.joined(separator: "\n")
         let hashtagsText = description.hashtags.joined(separator: " ")
@@ -403,19 +509,36 @@ final class TelegramBotService: @unchecked Sendable {
         🏷 *Хештеги:*
         \(hashtagsText)
         
-        ⚡️ Осталось генераций: *\(remaining)*
+        ━━━━━━━━━━━━━━━━━━━
+        ⚡️ *Осталось:* \(remainingText) текстов + \(remainingPhoto) фото
         """
         
-        // Кнопки для дальнейших действий
-        let keyboard = TelegramReplyMarkup(inlineKeyboard: [
-            [
-                TelegramInlineKeyboardButton(text: "🔄 Новая генерация", callbackData: "new_generation"),
-                TelegramInlineKeyboardButton(text: "💰 Мой баланс", callbackData: "my_balance")
-            ],
-            [
-                TelegramInlineKeyboardButton(text: "📄 Экспорт в файл", callbackData: "export_last")
-            ]
+        // Умные кнопки для дальнейших действий
+        var buttons: [[TelegramInlineKeyboardButton]] = []
+        
+        // Первая строка: быстрая генерация той же категории
+        if let category = currentCategory {
+            buttons.append([
+                TelegramInlineKeyboardButton(
+                    text: "🔄 Ещё \(category.emoji) \(category.name)",
+                    callbackData: "quick_generate_\(category.rawValue)"
+                )
+            ])
+        }
+        
+        // Вторая строка: другая категория + баланс
+        buttons.append([
+            TelegramInlineKeyboardButton(text: "🔄 Другая категория", callbackData: "new_generation"),
+            TelegramInlineKeyboardButton(text: "💰 Баланс", callbackData: "my_balance")
         ])
+        
+        // Третья строка: экспорт + подписка
+        buttons.append([
+            TelegramInlineKeyboardButton(text: "📄 Экспорт", callbackData: "export_last"),
+            TelegramInlineKeyboardButton(text: "💎 Пакеты", callbackData: "view_packages")
+        ])
+        
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
         
         try await sendMessage(chatId: chatId, text: resultText, replyMarkup: keyboard)
     }
@@ -431,29 +554,8 @@ final class TelegramBotService: @unchecked Sendable {
         let repo = UserRepository(database: app.db)
         let plan = try await repo.getCurrentPlan(user)
         
-        // Проверка Ultra подписки (фото доступно только для Ultra)
-        guard plan == .ultra else {
-            let upgradeText = """
-            📷 *Генерация по фото доступна только в Ultra!*
-            
-            С Ultra подпиской ты получаешь:
-            • ✨ Генерация по фотографиям товара
-            • 🚀 1000 описаний в месяц
-            • ⚡️ Приоритетная обработка
-            • 🎯 Расширенные промпты
-            
-            Цена: *1,499₽/мес*
-            
-            Хочешь попробовать текстовую генерацию? Используй /start
-            """
-            
-            let keyboard = TelegramReplyMarkup(inlineKeyboard: [
-                [TelegramInlineKeyboardButton(text: "⭐️ Купить Ultra", callbackData: "buy_ultra")]
-            ])
-            
-            try await sendMessage(chatId: chatId, text: upgradeText, replyMarkup: keyboard)
-            return
-        }
+        app.logger.info("📷 Photo generation request from user \(user.telegramId)")
+        app.logger.info("  Current plan: \(plan.name)")
         
         // Проверка что категория выбрана
         guard let categoryRaw = user.selectedCategory,
@@ -465,9 +567,28 @@ final class TelegramBotService: @unchecked Sendable {
             return
         }
         
-        // Проверка лимитов
-        guard try await repo.hasGenerationsAvailable(user) else {
-            try await sendMessage(chatId: chatId, text: Constants.BotMessage.limitExceeded)
+        // Проверка лимитов ФОТО (отдельно!)
+        let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
+        app.logger.info("  Remaining photo generations: \(remainingPhoto)")
+        
+        guard try await repo.hasPhotoGenerationsAvailable(user) else {
+            let upgradeText = """
+            📷 *Лимит фото исчерпан!*
+            
+            Твой план: *\(plan.emoji) \(plan.name)*
+            Осталось фото: *0*
+            
+            Обнови пакет для большего количества описаний по фото:
+            
+            📦 Малый (299₽): 20 описаний (3 фото)
+            📦📦 Средний (599₽): 50 описаний (5 фото)
+            📦📦📦 Большой (999₽): 100 описаний (10 фото)
+            🎁💎 Максимальный (1,399₽): 200 описаний (20 фото)
+            
+            /subscribe - посмотреть все пакеты
+            """
+            
+            try await sendMessage(chatId: chatId, text: upgradeText)
             return
         }
         
@@ -482,11 +603,16 @@ final class TelegramBotService: @unchecked Sendable {
             
             // Скачать фото
             let imageData = try await downloadPhoto(fileId: largestPhoto.fileId)
+            app.logger.info("  Downloaded photo: \(imageData.count) bytes")
+            
+            // СЖАТЬ фото до 1024x1024 (экономия токенов!)
+            let compressedImage = try await compressImage(imageData, maxSize: 1024)
+            app.logger.info("  Compressed photo: \(compressedImage.count) bytes (saved \(imageData.count - compressedImage.count) bytes)")
             
             // Вызвать Claude Vision API
             let additionalContext = caption ?? "Товар без дополнительного описания"
             let description = try await app.claude.generateProductDescriptionFromPhoto(
-                imageData: imageData,
+                imageData: compressedImage,
                 productInfo: additionalContext,
                 category: category
             )
@@ -507,8 +633,8 @@ final class TelegramBotService: @unchecked Sendable {
             
             try await generation.save(on: app.db)
             
-            // Увеличить счетчик
-            try await repo.incrementGenerations(user)
+            // Увеличить счетчик ФОТО (отдельно!)
+            try await repo.incrementPhotoGenerations(user)
             
             // Отправить результат
             try await sendGenerationResult(
@@ -523,6 +649,25 @@ final class TelegramBotService: @unchecked Sendable {
             app.logger.error("❌ Photo generation error: \(error)")
             try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
         }
+    }
+    
+    private func compressImage(_ imageData: Data, maxSize: Int) async throws -> Data {
+        // Упрощённая реализация: если изображение больше 200KB, считаем что оно большое
+        // В production лучше использовать CoreGraphics для реального сжатия
+        
+        let maxBytes = 200 * 1024 // 200KB
+        
+        if imageData.count <= maxBytes {
+            app.logger.debug("  Image already small enough: \(imageData.count) bytes")
+            return imageData
+        }
+        
+        // Для production: здесь должно быть реальное сжатие через CoreGraphics
+        // Сейчас просто возвращаем как есть и логируем
+        app.logger.warning("  Image is large (\(imageData.count) bytes), but compression not implemented yet")
+        app.logger.info("  TODO: Add CoreGraphics compression to \(maxSize)x\(maxSize)")
+        
+        return imageData
     }
     
     private func downloadPhoto(fileId: String) async throws -> Data {
@@ -568,7 +713,38 @@ final class TelegramBotService: @unchecked Sendable {
     
     // MARK: - Export & Buy Handlers
     
-    private func handleExportLast(user: User, chatId: Int64) async throws {
+    private func handleExportFormatChoice(user: User, chatId: Int64) async throws {
+        let formatText = """
+        📄 *Выбери формат экспорта:*
+        """
+        
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: [
+            [
+                TelegramInlineKeyboardButton(text: "📊 Excel (.xlsx)", callbackData: "export_excel"),
+                TelegramInlineKeyboardButton(text: "📄 Текст (.txt)", callbackData: "export_txt")
+            ]
+        ])
+        
+        try await sendMessage(chatId: chatId, text: formatText, replyMarkup: keyboard)
+    }
+    
+    private func handleExportExcel(user: User, chatId: Int64) async throws {
+        // TODO: Реализовать Excel export через библиотеку
+        try await sendMessage(
+            chatId: chatId,
+            text: "📊 Excel экспорт в разработке! Пока используй TXT формат."
+        )
+    }
+    
+    private func handleExportAllExcel(user: User, chatId: Int64) async throws {
+        // TODO: Реализовать массовый Excel export
+        try await sendMessage(
+            chatId: chatId,
+            text: "📊 Массовый Excel экспорт в разработке!\n\nПока доступен экспорт последнего описания через /history"
+        )
+    }
+    
+    private func handleExportTxt(user: User, chatId: Int64) async throws {
         // Получить последнюю генерацию
         let lastGeneration = try await Generation.query(on: app.db)
             .filter(\.$user.$id == user.id!)
@@ -807,14 +983,21 @@ final class TelegramBotService: @unchecked Sendable {
     enum CallbackData {
         case category(String)
         case newGeneration
+        case quickGenerate(String) // быстрая генерация той же категории
         case myBalance
         case exportLast
         case buyPlan(String)
+        case viewPackages
+        case exportFormat(String) // "excel" or "txt"
+        case exportAllExcel
         
         init?(rawValue: String) {
             if rawValue.starts(with: "category_") {
                 let category = String(rawValue.dropFirst("category_".count))
                 self = .category(category)
+            } else if rawValue.starts(with: "quick_generate_") {
+                let category = String(rawValue.dropFirst("quick_generate_".count))
+                self = .quickGenerate(category)
             } else if rawValue == "new_generation" {
                 self = .newGeneration
             } else if rawValue == "my_balance" {
@@ -824,6 +1007,13 @@ final class TelegramBotService: @unchecked Sendable {
             } else if rawValue.starts(with: "buy_") {
                 let plan = String(rawValue.dropFirst("buy_".count))
                 self = .buyPlan(plan)
+            } else if rawValue == "view_packages" {
+                self = .viewPackages
+            } else if rawValue == "export_all_excel" {
+                self = .exportAllExcel
+            } else if rawValue.starts(with: "export_") {
+                let format = String(rawValue.dropFirst("export_".count))
+                self = .exportFormat(format)
             } else {
                 return nil
             }

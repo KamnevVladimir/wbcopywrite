@@ -25,6 +25,9 @@ final class User: Model, Content, @unchecked Sendable {
     @Field(key: "generations_used")
     var generationsUsed: Int
     
+    @Field(key: "photo_generations_used")
+    var photoGenerationsUsed: Int
+    
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
     
@@ -53,6 +56,7 @@ final class User: Model, Content, @unchecked Sendable {
         self.firstName = firstName
         self.lastName = lastName
         self.generationsUsed = 0
+        self.photoGenerationsUsed = 0
     }
 }
 
@@ -78,7 +82,7 @@ extension User {
     
     func remainingGenerations(on db: Database) async throws -> Int {
         let plan = try await currentPlan(on: db)
-        let limit = plan.generationsLimit
+        let limit = plan.textGenerationsLimit
         
         // Для free - считаем общее количество
         if plan == .free {
@@ -98,5 +102,38 @@ extension User {
         
         return max(0, limit - generationsThisMonth)
     }
+    
+    func remainingPhotoGenerations(on db: Database) async throws -> Int {
+        let plan = try await currentPlan(on: db)
+        let limit = plan.photoGenerationsLimit
+        
+        // Безлимит
+        if limit == -1 {
+            return 999
+        }
+        
+        // Для free - считаем общее количество
+        if plan == .free {
+            return max(0, limit - photoGenerationsUsed)
+        }
+        
+        // Для платных - считаем за текущий месяц
+        guard let subscription = try await self.$subscription.get(on: db) else {
+            return 0
+        }
+        
+        let startOfMonth = subscription.currentPeriodStart
+        
+        // Считаем фото генерации (можно добавить флаг в Generation модель)
+        // Пока упрощённо - считаем по названию
+        let photoGenerationsThisMonth = try await Generation.query(on: db)
+            .filter(\.$user.$id == self.id!)
+            .filter(\.$createdAt >= startOfMonth)
+            .filter(\.$productName == "Генерация по фото")
+            .count()
+        
+        return max(0, limit - photoGenerationsThisMonth)
+    }
 }
+
 

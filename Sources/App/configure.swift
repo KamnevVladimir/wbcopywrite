@@ -64,6 +64,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateUsers())
     app.migrations.add(CreateSubscriptions())
     app.migrations.add(CreateGenerations())
+    app.migrations.add(AddPhotoGenerationsToUsers())
     
     // Автоматически запускать миграции при старте (для Railway)
     if app.environment == .production {
