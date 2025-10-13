@@ -2,7 +2,8 @@ import Vapor
 
 /// Telegram Long Polling Service
 /// Профессиональная реализация с error handling, graceful shutdown и exponential backoff
-final class TelegramPollingService: @unchecked Sendable {
+/// Thread-safe: использует actor для защиты mutable state
+actor TelegramPollingService {
     private let app: Application
     private let botToken: String
     private let baseURL: String

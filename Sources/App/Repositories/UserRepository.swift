@@ -82,23 +82,91 @@ struct UserRepository {
     }
     
     /// Списать 1 текстовый кредит (или увеличить старый счётчик, если кредитов нет)
+    /// Thread-safe: использует pessimistic locking через FOR UPDATE
     func incrementGenerations(_ user: User) async throws {
-        if user.textCredits > 0 {
-            user.textCredits -= 1
-        } else {
-            user.generationsUsed += 1
+        // Pessimistic locking: блокируем строку в БД
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .for(.update)
+            .first() else {
+            throw Abort(.notFound, reason: "User not found")
         }
-        try await user.update(on: database)
+        
+        // Атомарно проверяем и обновляем
+        if freshUser.textCredits > 0 {
+            freshUser.textCredits -= 1
+        } else {
+            freshUser.generationsUsed += 1
+        }
+        
+        try await freshUser.update(on: database)
+        
+        // Обновляем переданного пользователя для консистентности
+        user.textCredits = freshUser.textCredits
+        user.generationsUsed = freshUser.generationsUsed
     }
     
     /// Списать 1 фото кредит (или увеличить старый счётчик, если кредитов нет)
+    /// Thread-safe: использует pessimistic locking через FOR UPDATE
     func incrementPhotoGenerations(_ user: User) async throws {
-        if user.photoCredits > 0 {
-            user.photoCredits -= 1
-        } else {
-            user.photoGenerationsUsed += 1
+        // Pessimistic locking: блокируем строку в БД
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .for(.update)
+            .first() else {
+            throw Abort(.notFound, reason: "User not found")
         }
-        try await user.update(on: database)
+        
+        // Атомарно проверяем и обновляем
+        if freshUser.photoCredits > 0 {
+            freshUser.photoCredits -= 1
+        } else {
+            freshUser.photoGenerationsUsed += 1
+        }
+        
+        try await freshUser.update(on: database)
+        
+        // Обновляем переданного пользователя для консистентности
+        user.photoCredits = freshUser.photoCredits
+        user.photoGenerationsUsed = freshUser.photoGenerationsUsed
+    }
+    
+    /// Откатить текстовую генерацию (если произошла ошибка после списания)
+    func rollbackGeneration(_ user: User) async throws {
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .for(.update)
+            .first() else {
+            return
+        }
+        
+        // Возвращаем кредит обратно
+        if freshUser.textCredits < 1000 { // Защита от переполнения
+            freshUser.textCredits += 1
+        } else if freshUser.generationsUsed > 0 {
+            freshUser.generationsUsed -= 1
+        }
+        
+        try await freshUser.update(on: database)
+    }
+    
+    /// Откатить фото генерацию (если произошла ошибка после списания)
+    func rollbackPhotoGeneration(_ user: User) async throws {
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .for(.update)
+            .first() else {
+            return
+        }
+        
+        // Возвращаем кредит обратно
+        if freshUser.photoCredits < 1000 {
+            freshUser.photoCredits += 1
+        } else if freshUser.photoGenerationsUsed > 0 {
+            freshUser.photoGenerationsUsed -= 1
+        }
+        
+        try await freshUser.update(on: database)
     }
     
     // MARK: - Queries

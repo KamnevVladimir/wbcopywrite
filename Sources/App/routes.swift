@@ -30,41 +30,77 @@ func routes(_ app: Application) throws {
         """
     }
     
-    // MARK: - Tribute minimal API
-    struct CreatePaymentRequest: Content { let plan: String; let telegramUserId: Int64 }
-    struct CreatePaymentResponse: Content { let paymentUrl: String }
+    // MARK: - Tribute Payment API
     
-    // Симуляция создания оплаты: пока возвращаем прямую web ссылку на продукт
-    app.post("api", "tribute", "create-payment") { req async throws -> CreatePaymentResponse in
-        let body = try req.content.decode(CreatePaymentRequest.self)
-        guard let plan = Constants.SubscriptionPlan(rawValue: body.plan) else {
-            throw Abort(.badRequest, reason: "Unknown plan")
-        }
-        guard !plan.tributeWebLink.isEmpty else {
-            throw Abort(.badRequest, reason: "Plan is temporarily unavailable")
-        }
-        req.logger.info("💳 Create payment for user=\(body.telegramUserId) plan=\(plan.rawValue)")
-        return CreatePaymentResponse(paymentUrl: plan.tributeWebLink)
+    /// Структуры запроса/ответа
+    struct CreatePaymentRequest: Content {
+        let plan: String
+        let telegramUserId: Int64
     }
     
-    // Вебхук для Tribute (минимальная заглушка)
-    app.post("api", "tribute", "webhook") { req async throws -> HTTPStatus in
-        let event = try req.content.decode(TributeWebhookEvent.self)
-        req.logger.info("💰 Tribute webhook: type=\(event.type) userId=\(event.data.userId)")
+    struct CreatePaymentResponse: Content {
+        let paymentUrl: String
+        let plan: String
+        let amount: Int
+    }
+    
+    /// POST /api/tribute/create-payment
+    /// Создать ссылку на оплату для пользователя
+    app.post("api", "tribute", "create-payment") { req async throws -> CreatePaymentResponse in
+        let body = try req.content.decode(CreatePaymentRequest.self)
         
-        if event.type == TributeWebhookEvent.EventType.paymentSucceeded.rawValue {
-            // Найдём пользователя и пополним кредиты согласно описанию платежа
-            guard let telegramId = Int64(event.data.userId) else { return .ok }
-            let repo = UserRepository(database: req.db)
-            if let user = try await repo.find(telegramId: telegramId),
-               let plan = Constants.SubscriptionPlan.allCases.first(where: { event.data.description?.contains($0.name) == true || event.data.description == $0.rawValue || $0.tributeProductId == event.data.subscriptionId }) {
-                // Прибавляем кредиты плана к текущему балансу
-                user.textCredits += plan.textGenerationsLimit
-                user.photoCredits += plan.photoGenerationsLimit
-                try await user.update(on: req.db)
-                req.logger.info("✅ Credits added: text=\(plan.textGenerationsLimit) photo=\(plan.photoGenerationsLimit) for user=\(telegramId)")
-            }
+        guard let plan = Constants.SubscriptionPlan(rawValue: body.plan) else {
+            throw Abort(.badRequest, reason: "Unknown plan: \(body.plan)")
         }
+        
+        guard plan != .free else {
+            throw Abort(.badRequest, reason: "Free plan cannot be purchased")
+        }
+        
+        req.logger.info("💳 Creating payment: user=\(body.telegramUserId) plan=\(plan.rawValue)")
+        
+        // Создаем ссылку через TributeService
+        let paymentUrl = try await req.application.tribute.createPaymentLink(
+            plan: plan,
+            telegramId: body.telegramUserId
+        )
+        
+        return CreatePaymentResponse(
+            paymentUrl: paymentUrl,
+            plan: plan.name,
+            amount: plan.price
+        )
+    }
+    
+    /// POST /api/tribute/webhook
+    /// Вебхук для получения уведомлений о платежах от Tribute
+    app.post("api", "tribute", "webhook") { req async throws -> HTTPStatus in
+        // Шаг 1: Получить тело запроса для верификации подписи
+        guard let body = req.body.data else {
+            throw Abort(.badRequest, reason: "Empty body")
+        }
+        
+        // Шаг 2: Проверить подпись (опционально, если Tribute её отправляет)
+        if let signature = req.headers.first(name: "X-Tribute-Signature") {
+            let isValid = req.application.tribute.verifyWebhookSignature(
+                payload: body,
+                signature: signature
+            )
+            
+            if !isValid {
+                req.logger.warning("⚠️ Invalid webhook signature")
+                throw Abort(.unauthorized, reason: "Invalid signature")
+            }
+            
+            req.logger.info("✅ Webhook signature verified")
+        }
+        
+        // Шаг 3: Декодировать событие
+        let event = try req.content.decode(TributeWebhookEvent.self)
+        
+        // Шаг 4: Обработать через TributeService
+        try await req.application.tribute.handleWebhook(event, on: req)
+        
         return .ok
     }
     

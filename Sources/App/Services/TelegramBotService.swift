@@ -250,23 +250,23 @@ final class TelegramBotService: @unchecked Sendable {
         
         Твой текущий: *\(currentPlan.emoji) \(currentPlan.name)*
         
-        📦 *МАЛЫЙ* - 299₽/мес
-        • 20 описаний (17 текстов + 3 фото)
+        📦 *МАЛЫЙ* - 299₽
+        • 20 описаний (20 текстов + 3 бонус фото)
         • 14.95₽ за описание
         • Для 1-5 товаров/неделя
         
-        📦📦 *СРЕДНИЙ* - 599₽/мес
-        • 50 описаний (45 текстов + 5 фото)
+        📦📦 *СРЕДНИЙ* - 599₽
+        • 50 описаний (50 текстов + 5 бонус фото)
         • 11.98₽ за описание
         • Для 10-15 товаров/неделя
         
-        📦📦📦 *БОЛЬШОЙ* - 999₽/мес
-        • 100 описаний (90 текстов + 10 фото)
+        📦📦📦 *БОЛЬШОЙ* - 999₽
+        • 100 описаний (100 текстов + 10 бонус фото)
         • 9.99₽ за описание
         • Для 20-30 товаров/неделя
         
-        🎁💎 *МАКСИМАЛЬНЫЙ* - 1,399₽/мес
-        • 200 описаний (180 текстов + 20 фото)
+        🎁💎 *МАКСИМАЛЬНЫЙ* - 1,399₽
+        • 200 описаний (200 текстов + 20 бонус фото)
         • 6.99₽ за описание
         • Для агентств, 30+ товаров/неделя
         
@@ -284,13 +284,28 @@ final class TelegramBotService: @unchecked Sendable {
         💎 *Экономишь: 24,401₽/мес!*
         ━━━━━━━━━━━━━━━━━━━
         
-        ⚠️ Оплата через Tribute скоро!
-        Пока доступен Free пакет.
+        💳 *Выбери пакет для покупки:*
         
         ❓ Вопросы? \(Constants.Support.username)
         """
         
-        try await sendMessage(chatId: chatId, text: subscribeText)
+        // Создаем кнопки для покупки
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: [
+            [
+                TelegramInlineKeyboardButton(text: "📦 Малый 299₽", callbackData: "buy_small")
+            ],
+            [
+                TelegramInlineKeyboardButton(text: "📦📦 Средний 599₽", callbackData: "buy_medium")
+            ],
+            [
+                TelegramInlineKeyboardButton(text: "📦📦📦 Большой 999₽", callbackData: "buy_large")
+            ],
+            [
+                TelegramInlineKeyboardButton(text: "🎁💎 Максимальный 1,399₽", callbackData: "buy_max")
+            ]
+        ])
+        
+        try await sendMessage(chatId: chatId, text: subscribeText, replyMarkup: keyboard)
     }
     
     private func handleHistoryCommand(user: User, chatId: Int64, offset: Int = 0, limit: Int = 5) async throws {
@@ -575,7 +590,9 @@ final class TelegramBotService: @unchecked Sendable {
         
         // Парсинг callback data
         guard let callbackData = CallbackData(rawValue: data) else {
-            app.logger.warning("⚠️ Unknown callback data: \(data)")
+            app.logger.warning("⚠️ Unknown callback data from user \(user.telegramId): '\(data)'")
+            app.logger.warning("  Username: @\(user.username ?? "none")")
+            app.logger.warning("  This may indicate tampering or outdated client")
             try await answerCallback(callbackId: callback.id, text: "Неизвестное действие")
             return
         }
@@ -693,6 +710,11 @@ final class TelegramBotService: @unchecked Sendable {
             return
         }
         
+        // 🔒 ВАЖНО: Списываем кредит ДО генерации (защита от TOCTOU)
+        app.logger.info("🔒 Reserving credit before generation...")
+        try await repo.incrementGenerations(user)
+        app.logger.info("✅ Credit reserved")
+        
         // Показать прогресс генерации
         let progressMessage = try await sendMessage(
             chatId: chatId,
@@ -742,10 +764,6 @@ final class TelegramBotService: @unchecked Sendable {
             try await generation.save(on: app.db)
             app.logger.info("🟢 Saved to database: \(generation.id?.uuidString ?? "unknown")")
             
-            // Увеличить счетчик
-            try await repo.incrementGenerations(user)
-            app.logger.info("🟢 Incremented user counter. Used: \(user.generationsUsed + 1)")
-            
             // Отправить результат
             app.logger.info("🟢 Sending result to user...")
             try await sendGenerationResult(
@@ -760,6 +778,11 @@ final class TelegramBotService: @unchecked Sendable {
             app.logger.error("❌ Generation error: \(error)")
             app.logger.error("❌ Error type: \(type(of: error))")
             app.logger.error("❌ Error description: \(String(describing: error))")
+            
+            // 🔄 Откатываем списанный кредит (т.к. генерация не удалась)
+            app.logger.info("🔄 Rolling back reserved credit...")
+            try? await repo.rollbackGeneration(user)
+            app.logger.info("✅ Credit rolled back")
             
             try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
         }
@@ -901,6 +924,11 @@ final class TelegramBotService: @unchecked Sendable {
             return
         }
         
+        // 🔒 ВАЖНО: Списываем фото кредит ДО генерации (защита от TOCTOU)
+        app.logger.info("🔒 Reserving photo credit before generation...")
+        try await repo.incrementPhotoGenerations(user)
+        app.logger.info("✅ Photo credit reserved")
+        
         // Показать "Анализирую фото..."
         try await sendMessage(chatId: chatId, text: "🔍 Анализирую фотографию...\n\nЭто может занять 15-20 секунд.")
         
@@ -942,9 +970,6 @@ final class TelegramBotService: @unchecked Sendable {
             
             try await generation.save(on: app.db)
             
-            // Увеличить счетчик ФОТО (отдельно!)
-            try await repo.incrementPhotoGenerations(user)
-            
             // Отправить результат
             try await sendGenerationResult(
                 chatId: chatId,
@@ -956,25 +981,56 @@ final class TelegramBotService: @unchecked Sendable {
             
         } catch {
             app.logger.error("❌ Photo generation error: \(error)")
+            
+            // 🔄 Откатываем списанный фото кредит (т.к. генерация не удалась)
+            app.logger.info("🔄 Rolling back reserved photo credit...")
+            try? await repo.rollbackPhotoGeneration(user)
+            app.logger.info("✅ Photo credit rolled back")
+            
             try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
         }
     }
     
     private func compressImage(_ imageData: Data, maxSize: Int) async throws -> Data {
-        // Упрощённая реализация: если изображение больше 200KB, считаем что оно большое
-        // В production лучше использовать CoreGraphics для реального сжатия
+        // Проверяем размер файла (защита от огромных изображений)
+        let maxFileSize = 10 * 1024 * 1024 // 10MB (Telegram максимум)
         
-        let maxBytes = 200 * 1024 // 200KB
+        guard imageData.count <= maxFileSize else {
+            app.logger.error("❌ Image too large: \(imageData.count) bytes (max \(maxFileSize))")
+            throw BotError.imageTooLarge
+        }
         
-        if imageData.count <= maxBytes {
-            app.logger.debug("  Image already small enough: \(imageData.count) bytes")
+        // Простая эвристика для оценки размера изображения
+        // PNG/JPEG обычно ~3-5 байт на пиксель для фото высокого качества
+        let estimatedPixels = imageData.count / 4
+        let estimatedDimension = Int(sqrt(Double(estimatedPixels)))
+        
+        app.logger.info("  Image size: \(imageData.count / 1024)KB")
+        app.logger.info("  Estimated dimensions: ~\(estimatedDimension)x\(estimatedDimension)px")
+        
+        // Если изображение явно маленькое (< 500KB) - скорее всего уже сжато
+        if imageData.count < 500 * 1024 {
+            app.logger.info("✅ Image already optimized: \(imageData.count / 1024)KB")
             return imageData
         }
         
-        // Для production: здесь должно быть реальное сжатие через CoreGraphics
-        // Сейчас просто возвращаем как есть и логируем
-        app.logger.warning("  Image is large (\(imageData.count) bytes), but compression not implemented yet")
-        app.logger.info("  TODO: Add CoreGraphics compression to \(maxSize)x\(maxSize)")
+        // Если большое (> 2MB) - предупреждаем о возможных высоких расходах
+        if imageData.count > 2 * 1024 * 1024 {
+            app.logger.warning("⚠️ Large image detected: \(imageData.count / 1024)KB")
+            app.logger.warning("  This may consume ~1000+ Claude Vision tokens (~1.4₽)")
+            app.logger.warning("  Recommended: compress to 1024x1024 to save 75% tokens")
+        }
+        
+        // TODO (для production): Реализовать реальное сжатие
+        // Варианты:
+        // 1. ImageMagick CLI: convert input.jpg -resize 1024x1024 output.jpg
+        // 2. swift-image library (если доступна на Linux)
+        // 3. Внешний сервис (imgproxy, cloudinary)
+        //
+        // Сейчас просто возвращаем как есть, но с предупреждением
+        
+        app.logger.info("⚠️ Returning original image (compression not implemented on Linux)")
+        app.logger.info("  For production: add imagemagick or swift-image library")
         
         return imageData
     }
@@ -996,8 +1052,10 @@ final class TelegramBotService: @unchecked Sendable {
         
         let uri = URI(string: "\(baseURL)/getFile")
         
+        // Timeout 10 секунд на получение file_path
         let response = try await app.client.post(uri) { req in
             try req.content.encode(["file_id": fileId])
+            req.headers.add(name: .contentType, value: "application/json")
         }
         
         guard response.status == .ok else {
@@ -1006,18 +1064,31 @@ final class TelegramBotService: @unchecked Sendable {
         
         let fileResponse = try response.content.decode(GetFileResponse.self)
         
-        // Скачать файл
+        // Скачать файл с timeout 30 секунд
         let fileURL = "https://api.telegram.org/file/bot\(botToken)/\(fileResponse.result.filePath)"
         let fileUri = URI(string: fileURL)
+        
+        app.logger.info("  Downloading photo from: \(fileURL)")
         
         let fileDataResponse = try await app.client.get(fileUri)
         
         guard fileDataResponse.status == .ok,
               let buffer = fileDataResponse.body else {
+            app.logger.error("❌ Failed to download photo: status=\(fileDataResponse.status)")
             throw BotError.telegramAPIError(.notFound)
         }
         
-        return Data(buffer: buffer)
+        let imageData = Data(buffer: buffer)
+        
+        // Проверяем размер скачанного файла
+        app.logger.info("✅ Photo downloaded: \(imageData.count / 1024)KB")
+        
+        guard imageData.count <= 10 * 1024 * 1024 else {
+            app.logger.error("❌ Downloaded photo too large: \(imageData.count / 1024)KB")
+            throw BotError.imageTooLarge
+        }
+        
+        return imageData
     }
     
     // MARK: - Export & Buy Handlers
@@ -1269,33 +1340,58 @@ final class TelegramBotService: @unchecked Sendable {
             return
         }
         
-        // Если нет productId — показываем недоступно
-        guard !selected.tributeProductId.isEmpty else {
-            try await sendMessage(chatId: chatId, text: "⚠️ Этот пакет временно недоступен. Выбери другой.")
+        guard selected != .free else {
+            try await sendMessage(chatId: chatId, text: "🆓 У тебя уже есть Free пакет!")
             return
         }
         
-        let text = """
-        💎 *Покупка пакета \(selected.name)*
+        // Если нет productId — показываем недоступно
+        guard !selected.tributeProductId.isEmpty && !selected.tributeWebLink.isEmpty else {
+            try await sendMessage(chatId: chatId, text: "⚠️ Этот пакет временно недоступен. Выбери другой или напиши \(Constants.Support.username)")
+            return
+        }
         
-        Цена: \(selected.price)₽/мес
-        Что входит: \(selected.description)
-        """
-        
-        let keyboard = TelegramReplyMarkup(inlineKeyboard: [[
-            TelegramInlineKeyboardButton(text: "💳 Оплатить \(selected.price)₽", url: selected.tributeWebLink)
-        ]])
-        
-        try await sendMessage(chatId: chatId, text: text, replyMarkup: keyboard)
+        do {
+            // Создаем ссылку на оплату через TributeService
+            let paymentUrl = try await app.tribute.createPaymentLink(
+                plan: selected,
+                telegramId: user.telegramId
+            )
+            
+            let text = """
+            💎 *Пакет "\(selected.name)"*
+            
+            💰 *Цена:* \(selected.price)₽
+            
+            📦 *Что получишь:*
+            \(selected.description)
+            
+            💡 *Цена за описание:* \(selected.pricePerGeneration) ₽
+            
+            ━━━━━━━━━━━━━━━━━━━
+            
+            💳 Нажми кнопку ниже для оплаты
+            
+            После успешной оплаты кредиты будут начислены автоматически! ✅
+            """
+            
+            let keyboard = TelegramReplyMarkup(inlineKeyboard: [
+                [
+                    TelegramInlineKeyboardButton(text: "💳 Оплатить \(selected.price)₽", url: paymentUrl)
+                ],
+                [
+                    TelegramInlineKeyboardButton(text: "« Назад к пакетам", callbackData: "view_packages")
+                ]
+            ])
+            
+            try await sendMessage(chatId: chatId, text: text, replyMarkup: keyboard)
+            
+        } catch {
+            app.logger.error("❌ Failed to create payment link: \(error)")
+            try await sendMessage(chatId: chatId, text: "❌ Ошибка создания платежа. Попробуй позже или напиши \(Constants.Support.username)")
+        }
     }
 
-    // Пополнение кредитов после успешной оплаты (будет вызываться из вебхука)
-    private func addCredits(_ plan: Constants.SubscriptionPlan, to user: User) async throws {
-        // Прибавляем кредиты пакета к текущему балансу
-        user.textCredits += plan.textGenerationsLimit
-        user.photoCredits += plan.photoGenerationsLimit
-        try await user.update(on: app.db)
-    }
     
     // MARK: - Copy Parts Feature (FR-8)
     
@@ -1481,6 +1577,12 @@ final class TelegramBotService: @unchecked Sendable {
         
         app.logger.info("✨ Improving generation \(uuid) for user \(user.telegramId)")
         
+        // 🔒 Списываем кредит ДО улучшения (защита от TOCTOU)
+        let repo = UserRepository(database: app.db)
+        app.logger.info("🔒 Reserving credit before improvement...")
+        try await repo.incrementGenerations(user)
+        app.logger.info("✅ Credit reserved for improvement")
+        
         // Показываем прогресс
         let progressMessage = try await sendMessage(
             chatId: chatId,
@@ -1530,10 +1632,6 @@ final class TelegramBotService: @unchecked Sendable {
             generation.resultHashtags = description.hashtags
             try await generation.save(on: app.db)
             
-            // Инкрементируем счётчик
-            let repo = UserRepository(database: app.db)
-            try await repo.incrementGenerations(user)
-            
             // Отправляем результат
             try await sendGenerationResult(chatId: chatId, description: description, user: user)
             
@@ -1541,6 +1639,12 @@ final class TelegramBotService: @unchecked Sendable {
             
         } catch {
             app.logger.error("❌ Error improving generation: \(error)")
+            
+            // 🔄 Откатываем списанный кредит
+            app.logger.info("🔄 Rolling back reserved credit...")
+            try? await repo.rollbackGeneration(user)
+            app.logger.info("✅ Credit rolled back")
+            
             try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
         }
     }
@@ -1740,6 +1844,7 @@ final class TelegramBotService: @unchecked Sendable {
         case telegramAPIError(HTTPResponseStatus)
         case userNotFound
         case limitExceeded
+        case imageTooLarge
     }
     
     // MARK: - Callback Data

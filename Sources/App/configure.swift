@@ -11,9 +11,10 @@ public func configure(_ app: Application) async throws {
     
     // MARK: - Logging Configuration
     
-    // Временно включаем debug логирование для отладки Claude API
-    app.logger.logLevel = .debug
-    app.logger.info("📝 Log level set to: debug (temporary for debugging)")
+    // Устанавливаем уровень логирования из ENV (production = info, development = debug)
+    let logLevel: Logger.Level = config.environment == "production" ? .info : .debug
+    app.logger.logLevel = logLevel
+    app.logger.info("📝 Log level set to: \(logLevel) (environment: \(config.environment))")
     
     // MARK: - Server Configuration
     
@@ -66,6 +67,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateGenerations())
     app.migrations.add(AddPhotoGenerationsToUsers())
     app.migrations.add(AddCreditsToUsers())
+    app.migrations.add(CreateProcessedWebhooks())
     
     // Автоматически запускать миграции при старте (для Railway)
     if app.environment == .production {
@@ -88,6 +90,16 @@ public func configure(_ app: Application) async throws {
         apiKey: config.claudeApiKey
     )
     app.claude = claudeService
+    
+    // MARK: - Tribute Service (Payments)
+    
+    let tributeService = TributeService(
+        app: app,
+        apiKey: config.tributeApiKey,
+        apiSecret: config.tributeSecret
+    )
+    app.tribute = tributeService
+    app.logger.info("✅ TributeService configured")
     
     // MARK: - Telegram Bot Service
     
