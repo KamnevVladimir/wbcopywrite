@@ -101,6 +101,37 @@ enum Constants {
         var supportsPhotoGeneration: Bool {
             return true // Все пакеты поддерживают фото!
         }
+        
+        var tributeProductId: String {
+            switch self {
+            case .free:
+                return "" // Free не требует оплаты
+            case .small:
+                return "83183" // Small 299₽ (status: new)
+            case .medium:
+                return "83179" // Medium 599₽ (status: new)
+            case .large:
+                return "83180" // Large 999₽ (status: new)
+            case .max:
+                return "83182" // Max 1399₽ (status: new)
+            }
+        }
+
+        // Direct web links to Tribute product pages (fallback without API)
+        var tributeWebLink: String {
+            switch self {
+            case .free:
+                return ""
+            case .small:
+                return "https://web.tribute.tg/p/lDF"
+            case .medium:
+                return "https://web.tribute.tg/p/lDB"
+            case .large:
+                return "https://web.tribute.tg/p/lDC"
+            case .max:
+                return "https://web.tribute.tg/p/lDE"
+            }
+        }
     }
     
     // Product categories

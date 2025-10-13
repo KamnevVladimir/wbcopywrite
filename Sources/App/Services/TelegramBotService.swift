@@ -1233,24 +1233,29 @@ final class TelegramBotService: @unchecked Sendable {
     }
     
     private func handleBuyPlan(plan: String, user: User, chatId: Int64) async throws {
-        // Пока Tribute не интегрирован - показываем заглушку
-        let buyText = """
-        💎 *Покупка подписки \(plan.capitalized)*
+        guard let selected = Constants.SubscriptionPlan(rawValue: plan) else {
+            try await sendMessage(chatId: chatId, text: "❌ Неизвестный пакет")
+            return
+        }
         
-        ⚠️ Интеграция оплаты пока в разработке!
+        // Если нет productId — показываем недоступно
+        guard !selected.tributeProductId.isEmpty else {
+            try await sendMessage(chatId: chatId, text: "⚠️ Этот пакет временно недоступен. Выбери другой.")
+            return
+        }
         
-        Скоро здесь будет:
-        • Автоматическая оплата через Tribute
-        • Мгновенная активация подписки
-        • Авторенев каждый месяц
+        let text = """
+        💎 *Покупка пакета \(selected.name)*
         
-        А пока пользуйся Free планом (3 описания).
-        
-        Хочешь больше описаний прямо сейчас?
-        Напиши в поддержку: @vskamnev
+        Цена: \(selected.price)₽/мес
+        Что входит: \(selected.description)
         """
         
-        try await sendMessage(chatId: chatId, text: buyText)
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: [[
+            TelegramInlineKeyboardButton(text: "💳 Оплатить \(selected.price)₽", url: selected.tributeWebLink)
+        ]])
+        
+        try await sendMessage(chatId: chatId, text: text, replyMarkup: keyboard)
     }
     
     // MARK: - Copy Parts Feature (FR-8)
