@@ -35,6 +35,13 @@ final class TelegramBotService: @unchecked Sendable {
     private func handleMessage(_ message: TelegramMessage) async throws {
         let user = try await getOrCreateUser(from: message.from, chatId: message.chat.id)
         
+        // Обработка документа (если есть)
+        if let document = message.document {
+            app.logger.info("📄 Document from @\(message.from.username ?? "unknown"): \(document.fileName ?? "unknown")")
+            try await handleBatchDocument(document: document, user: user, chatId: message.chat.id)
+            return
+        }
+        
         // Обработка фото (если есть)
         if let photos = message.photo, !photos.isEmpty {
             app.logger.info("📷 Photo from @\(message.from.username ?? "unknown")")
@@ -82,6 +89,9 @@ final class TelegramBotService: @unchecked Sendable {
             
         case "/cancel":
             try await handleCancelCommand(user: user, chatId: chatId)
+            
+        case "/batch":
+            try await handleBatchCommand(user: user, chatId: chatId)
             
         default:
             try await sendMessage(
@@ -156,6 +166,7 @@ final class TelegramBotService: @unchecked Sendable {
         /history - Твои описания
         /balance - Проверить остаток
         /subscribe - Пакеты и цены
+        /batch - Массовая генерация
         /help - Эта справка
         /cancel - Отменить
         
@@ -342,6 +353,199 @@ final class TelegramBotService: @unchecked Sendable {
             chatId: chatId,
             text: "✅ Действие отменено. Используй /start для возврата в меню."
         )
+    }
+    
+    private func handleBatchCommand(user: User, chatId: Int64) async throws {
+        let batchText = """
+        📦 *Массовая генерация*
+        
+        Загрузи TXT файл с товарами, и я создам описания для всех!
+        
+        📝 *Формат файла:*
+        ```
+        Категория: одежда
+        ---
+        Платье женское красное 42 размер
+        Кроссовки мужские Nike белые 45
+        Футболка унисекс хлопок XXL
+        ```
+        
+        📋 *Правила:*
+        • Первая строка: `Категория: [название]`
+        • Разделитель: `---`
+        • Каждый товар на отдельной строке
+        • Максимум 10 товаров за раз
+        
+        💡 *Результат:*
+        • Получишь Excel файл со всеми описаниями
+        • Каждый товар = 1 генерация из твоего лимита
+        
+        ⚡️ Загрузи файл, и начнём!
+        """
+        
+        try await sendMessage(chatId: chatId, text: batchText)
+    }
+    
+    // MARK: - Batch Processing (FR-6)
+    
+    private func handleBatchDocument(document: TelegramDocument, user: User, chatId: Int64) async throws {
+        // Проверяем тип файла
+        guard document.mimeType == "text/plain" || document.fileName?.hasSuffix(".txt") == true else {
+            try await sendMessage(chatId: chatId, text: "❌ Поддерживаются только TXT файлы.")
+            return
+        }
+        
+        try await sendMessage(chatId: chatId, text: "⏳ Обрабатываю файл...")
+        
+        do {
+            // Загружаем файл
+            let fileContent = try await downloadFile(fileId: document.fileId)
+            
+            // Парсим содержимое
+            let lines = fileContent.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            
+            guard !lines.isEmpty else {
+                try await sendMessage(chatId: chatId, text: "❌ Файл пустой.")
+                return
+            }
+            
+            // Первая строка должна быть категорией
+            guard let firstLine = lines.first, firstLine.lowercased().starts(with: "категория:") else {
+                try await sendMessage(chatId: chatId, text: "❌ Файл должен начинаться с 'Категория: [название]'")
+                return
+            }
+            
+            let categoryName = firstLine.replacingOccurrences(of: "Категория:", with: "").replacingOccurrences(of: "категория:", with: "").trimmingCharacters(in: .whitespaces)
+            
+            guard let category = Constants.ProductCategory.allCases.first(where: { $0.name.lowercased().contains(categoryName.lowercased()) }) else {
+                try await sendMessage(chatId: chatId, text: "❌ Неизвестная категория: \(categoryName)")
+                return
+            }
+            
+            // Находим разделитель
+            guard let separatorIndex = lines.firstIndex(of: "---") else {
+                try await sendMessage(chatId: chatId, text: "❌ Не найден разделитель '---' после категории.")
+                return
+            }
+            
+            // Товары после разделителя
+            let products = Array(lines[(separatorIndex + 1)...]).prefix(10) // Максимум 10
+            
+            guard !products.isEmpty else {
+                try await sendMessage(chatId: chatId, text: "❌ Нет товаров в файле.")
+                return
+            }
+            
+            // Проверяем лимит
+            let repo = UserRepository(database: app.db)
+            let remaining = try await repo.getRemainingGenerations(user)
+            
+            guard remaining >= products.count else {
+                try await sendMessage(chatId: chatId, text: "❌ Недостаточно генераций. Нужно: \(products.count), доступно: \(remaining)")
+                return
+            }
+            
+            // Генерируем описания
+            try await sendMessage(chatId: chatId, text: "🚀 Генерирую \(products.count) описаний...")
+            
+            var results: [(product: String, description: ClaudeService.ProductDescription)] = []
+            
+            for (index, product) in products.enumerated() {
+                try await sendMessage(chatId: chatId, text: "⏳ \(index + 1)/\(products.count): \(product.prefix(30))...")
+                
+                let description = try await app.claude.generateProductDescription(
+                    productInfo: String(product),
+                    category: category
+                )
+                
+                results.append((product: String(product), description: description))
+                
+                // Инкрементируем счётчик
+                try await repo.incrementGenerations(user)
+                
+                // Небольшая задержка между запросами
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 сек
+            }
+            
+            // Отправляем результат
+            try await sendBatchResults(chatId: chatId, results: results, category: category.name, user: user)
+            
+            app.logger.info("✅ Batch generation completed for user \(user.telegramId): \(results.count) products")
+            
+        } catch {
+            app.logger.error("❌ Batch processing error: \(error)")
+            try await sendMessage(chatId: chatId, text: "❌ Ошибка обработки файла: \(error.localizedDescription)")
+        }
+    }
+    
+    private func sendBatchResults(chatId: Int64, results: [(product: String, description: ClaudeService.ProductDescription)], category: String, user: User) async throws {
+        // Формируем текстовый результат
+        var resultText = """
+        ✅ *Готово! Сгенерировано \(results.count) описаний*
+        
+        📦 Категория: \(category)
+        
+        """
+        
+        for (index, result) in results.enumerated() {
+            resultText += "\(index + 1). \(result.product.prefix(30))... ✓\n"
+        }
+        
+        try await sendMessage(chatId: chatId, text: resultText)
+        
+        // Создаём TXT файл с результатами
+        var fileContent = "Массовая генерация описаний\n"
+        fileContent += "Категория: \(category)\n"
+        fileContent += "Дата: \(Date())\n"
+        fileContent += "=" + String(repeating: "=", count: 60) + "\n\n"
+        
+        for (index, result) in results.enumerated() {
+            fileContent += "\n📦 ТОВАР \(index + 1): \(result.product)\n\n"
+            fileContent += "📝 ЗАГОЛОВОК:\n\(result.description.title)\n\n"
+            fileContent += "📄 ОПИСАНИЕ:\n\(result.description.description)\n\n"
+            fileContent += "🎯 КЛЮЧЕВЫЕ ВЫГОДЫ:\n"
+            fileContent += result.description.bullets.map { "• \($0)" }.joined(separator: "\n")
+            fileContent += "\n\n🏷 ХЕШТЕГИ:\n\(result.description.hashtags.joined(separator: " "))\n\n"
+            fileContent += String(repeating: "-", count: 60) + "\n"
+        }
+        
+        // Отправляем как документ
+        try await sendDocument(
+            chatId: chatId,
+            content: fileContent,
+            filename: "batch_\(Date().timeIntervalSince1970).txt",
+            caption: "📦 Все описания в одном файле!"
+        )
+    }
+    
+    private func downloadFile(fileId: String) async throws -> String {
+        // Получаем путь к файлу
+        let getFileUrl = "https://api.telegram.org/bot\(app.environmentConfig.telegramBotToken)/getFile?file_id=\(fileId)"
+        let getFileResponse = try await app.client.get(URI(string: getFileUrl))
+        
+        struct FileResponse: Content {
+            struct Result: Content {
+                let filePath: String
+                
+                enum CodingKeys: String, CodingKey {
+                    case filePath = "file_path"
+                }
+            }
+            let ok: Bool
+            let result: Result
+        }
+        
+        let fileInfo = try getFileResponse.content.decode(FileResponse.self)
+        
+        // Скачиваем файл
+        let downloadUrl = "https://api.telegram.org/file/bot\(app.environmentConfig.telegramBotToken)/\(fileInfo.result.filePath)"
+        let downloadResponse = try await app.client.get(URI(string: downloadUrl))
+        
+        guard let body = downloadResponse.body, let data = body.getData(at: 0, length: body.readableBytes) else {
+            throw Abort(.internalServerError, reason: "Failed to download file")
+        }
+        
+        return String(data: data, encoding: .utf8) ?? ""
     }
     
     // MARK: - Callback Handlers

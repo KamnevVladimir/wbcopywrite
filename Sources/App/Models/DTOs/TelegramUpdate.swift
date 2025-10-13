@@ -22,6 +22,7 @@ struct TelegramMessage: Content {
     let text: String?
     let caption: String?
     let photo: [TelegramPhotoSize]?
+    let document: TelegramDocument?
     
     enum CodingKeys: String, CodingKey {
         case messageId = "message_id"
@@ -31,6 +32,7 @@ struct TelegramMessage: Content {
         case text
         case caption
         case photo
+        case document
     }
 }
 
@@ -78,6 +80,22 @@ struct TelegramPhotoSize: Content {
         case fileUniqueId = "file_unique_id"
         case width
         case height
+        case fileSize = "file_size"
+    }
+}
+
+struct TelegramDocument: Content {
+    let fileId: String
+    let fileUniqueId: String
+    let fileName: String?
+    let mimeType: String?
+    let fileSize: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case fileId = "file_id"
+        case fileUniqueId = "file_unique_id"
+        case fileName = "file_name"
+        case mimeType = "mime_type"
         case fileSize = "file_size"
     }
 }
