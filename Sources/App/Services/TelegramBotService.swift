@@ -57,13 +57,21 @@ final class TelegramBotService: @unchecked Sendable {
         if text.starts(with: "/") {
             try await handleCommand(text, user: user, chatId: message.chat.id)
         } else {
-            // Проверяем, ожидается ли улучшение описания
-            if let category = user.selectedCategory, category.starts(with: "improve_") {
-                try await handleImproveInput(text: text, user: user, chatId: message.chat.id)
-            } else {
-                // Обработка текста товара для генерации
-                try await handleProductDescription(text: text, user: user, chatId: message.chat.id)
+            // Проверяем специальные состояния
+            if let category = user.selectedCategory {
+                if category.starts(with: "improve_") {
+                    // Ожидается улучшение описания
+                    try await handleImproveInput(text: text, user: user, chatId: message.chat.id)
+                    return
+                } else if category == "awaiting_custom_category" {
+                    // Ожидается ввод кастомной категории
+                    try await handleCustomCategoryInput(categoryName: text, user: user, chatId: message.chat.id)
+                    return
+                }
             }
+            
+            // Обработка текста товара для генерации
+            try await handleProductDescription(text: text, user: user, chatId: message.chat.id)
         }
     }
     
@@ -602,6 +610,9 @@ final class TelegramBotService: @unchecked Sendable {
         case .category(let categoryRaw):
             try await handleCategorySelected(category: categoryRaw, user: user, chatId: chatId)
             
+        case .customCategory:
+            try await handleCustomCategoryRequest(user: user, chatId: chatId)
+            
         case .quickGenerate(let categoryRaw):
             // Быстрая генерация - сразу просим текст
             let repo = UserRepository(database: app.db)
@@ -622,6 +633,9 @@ final class TelegramBotService: @unchecked Sendable {
             
         case .exportLast:
             try await handleExportFormatChoice(user: user, chatId: chatId)
+            
+        case .improveLast:
+            try await handleImproveLast(user: user, chatId: chatId)
             
         case .exportFormat(let format):
             if format == "excel" {
@@ -673,6 +687,50 @@ final class TelegramBotService: @unchecked Sendable {
         ✅ Категория выбрана: \(productCategory.displayName)
         
         \(Constants.BotMessage.enterProductInfo)
+        """
+        
+        try await sendMessage(chatId: chatId, text: text)
+    }
+    
+    private func handleCustomCategoryRequest(user: User, chatId: Int64) async throws {
+        // Помечаем что ждем ввод кастомной категории
+        let repo = UserRepository(database: app.db)
+        try await repo.updateCategory(user, category: "awaiting_custom_category")
+        
+        let text = """
+        ✏️ *Своя категория*
+        
+        Напиши название категории товара:
+        
+        📝 *Примеры:*
+        • Книги и журналы
+        • Автозапчасти
+        • Зоотовары
+        • Детские игрушки
+        • Садовый инвентарь
+        • Строительные материалы
+        • Музыкальные инструменты
+        
+        Или /cancel для отмены
+        """
+        
+        try await sendMessage(chatId: chatId, text: text)
+    }
+    
+    private func handleCustomCategoryInput(categoryName: String, user: User, chatId: Int64) async throws {
+        // Сохраняем кастомную категорию (используем "other" как fallback)
+        let repo = UserRepository(database: app.db)
+        try await repo.updateCategory(user, category: "other")
+        
+        let text = """
+        ✅ Категория: *\(categoryName)*
+        
+        Отлично! Теперь опиши товар:
+        
+        📝 Например:
+        "\(categoryName) [название модели], характеристики, особенности"
+        
+        📷 Или отправь фото товара
         """
         
         try await sendMessage(chatId: chatId, text: text)
@@ -829,21 +887,62 @@ final class TelegramBotService: @unchecked Sendable {
         
         try? await Task.sleep(nanoseconds: 500_000_000)
         
-        // СООБЩЕНИЕ 3: Хештеги + кнопки
+        // СООБЩЕНИЕ 3: Хештеги + кнопки + Smart Nudges
         let hashtagsText = description.hashtags.joined(separator: " ")
+        
+        // Smart Nudges в зависимости от остатка
+        let nudge: String = {
+            let plan = try? await repo.getCurrentPlan(user)
+            let isFree = plan == .free
+            
+            if remainingText == 1 && isFree {
+                // Остался последний FREE кредит
+                return """
+                
+                ⚠️ *Остался последний FREE кредит!*
+                
+                💡 В пакете "Малый" (299₽):
+                • 20 описаний = 14.95₽ за каждое
+                • Копирайтер берет 500₽!
+                • Экономия: 97%
+                """
+            } else if remainingText == 0 && isFree {
+                // FREE кредиты закончились
+                return """
+                
+                😔 *FREE кредиты закончились*
+                
+                🎉 Тебе понравилось?
+                Продолжи с любым пакетом:
+                
+                📦 Малый: 20 описаний за 299₽
+                📦📦 Средний: 50 описаний за 599₽ (популярный!)
+                📦📦📦 Большой: 100 за 999₽
+                """
+            } else if remainingText + remainingPhoto <= 5 {
+                // Мало кредитов осталось
+                return """
+                
+                ⚠️ *Скоро закончатся кредиты!*
+                Успей докупить пакет 💎
+                """
+            }
+            
+            return "" // Нет nudge
+        }()
         
         let message3 = """
         🏷 *ХЕШТЕГИ:*
         \(hashtagsText)
         
         ━━━━━━━━━━━━━━━━━━━
-        ⚡️ *Осталось:* \(remainingText) текстов + \(remainingPhoto) фото
+        ⚡️ *Осталось:* \(remainingText) текстов + \(remainingPhoto) фото\(nudge)
         """
         
-        // Умные кнопки для дальнейших действий
+        // 🎨 Умная иерархия кнопок (приоритизация по частоте использования)
         var buttons: [[TelegramInlineKeyboardButton]] = []
         
-        // Первая строка: быстрая генерация той же категории
+        // ========== РЯД 1: ГЛАВНОЕ ДЕЙСТВИЕ (Quick Repeat) ==========
         if let category = currentCategory {
             buttons.append([
                 TelegramInlineKeyboardButton(
@@ -853,22 +952,33 @@ final class TelegramBotService: @unchecked Sendable {
             ])
         }
         
-        // Вторая строка: другая категория + баланс
+        // ========== РЯД 2: ВАЖНЫЕ ДЕЙСТВИЯ (Улучшить + Копировать) ==========
         buttons.append([
-            TelegramInlineKeyboardButton(text: "🔄 Другая категория", callbackData: "new_generation"),
+            TelegramInlineKeyboardButton(text: "✨ Улучшить", callbackData: "improve_last"),
+            TelegramInlineKeyboardButton(text: "📋 Копировать", callbackData: "copy_menu")
+        ])
+        
+        // ========== РЯД 3: НАВИГАЦИЯ (Другая категория + Баланс) ==========
+        buttons.append([
+            TelegramInlineKeyboardButton(text: "🔄 Другая", callbackData: "new_generation"),
             TelegramInlineKeyboardButton(text: "💰 Баланс", callbackData: "my_balance")
         ])
         
-        // Третья строка: копирование по частям
-        buttons.append([
-            TelegramInlineKeyboardButton(text: "📋 Скопировать части", callbackData: "copy_menu")
-        ])
-        
-        // Четвертая строка: экспорт + подписка
-        buttons.append([
-            TelegramInlineKeyboardButton(text: "📄 Экспорт", callbackData: "export_last"),
-            TelegramInlineKeyboardButton(text: "💎 Пакеты", callbackData: "view_packages")
-        ])
+        // ========== РЯД 4: ДЕЙСТВИЯ (Экспорт + Купить) ==========
+        // Показываем кнопку покупки более заметно если мало кредитов
+        if remainingText + remainingPhoto <= 5 {
+            buttons.append([
+                TelegramInlineKeyboardButton(text: "💎 КУПИТЬ ПАКЕТ", callbackData: "view_packages")
+            ])
+            buttons.append([
+                TelegramInlineKeyboardButton(text: "📄 Экспорт", callbackData: "export_last")
+            ])
+        } else {
+            buttons.append([
+                TelegramInlineKeyboardButton(text: "📄 Экспорт", callbackData: "export_last"),
+                TelegramInlineKeyboardButton(text: "💎 Пакеты", callbackData: "view_packages")
+            ])
+        }
         
         let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
         
@@ -1520,6 +1630,22 @@ final class TelegramBotService: @unchecked Sendable {
     
     // MARK: - Improve Result Feature (FR-5)
     
+    private func handleImproveLast(user: User, chatId: Int64) async throws {
+        // Найти последнюю генерацию
+        let lastGen = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .first()
+        
+        guard let generation = lastGen, let uuid = generation.id?.uuidString else {
+            try await sendMessage(chatId: chatId, text: "❌ Нет сохранённых описаний")
+            return
+        }
+        
+        // Вызываем обычный улучшение по UUID
+        try await handleImproveResult(generationUuid: uuid, user: user, chatId: chatId)
+    }
+    
     private func handleImproveResult(generationUuid: String, user: User, chatId: Int64) async throws {
         // Находим генерацию
         guard let uuid = UUID(uuidString: generationUuid),
@@ -1686,6 +1812,14 @@ final class TelegramBotService: @unchecked Sendable {
             rows.append(currentRow)
         }
         
+        // Добавить кнопку "Своя категория" отдельным рядом
+        rows.append([
+            TelegramInlineKeyboardButton(
+                text: "✏️ Своя категория",
+                callbackData: "custom_category"
+            )
+        ])
+        
         return TelegramReplyMarkup(inlineKeyboard: rows)
     }
     
@@ -1851,10 +1985,12 @@ final class TelegramBotService: @unchecked Sendable {
     
     enum CallbackData {
         case category(String)
+        case customCategory // своя категория
         case newGeneration
         case quickGenerate(String) // быстрая генерация той же категории
         case myBalance
         case exportLast
+        case improveLast // улучшить последнюю генерацию
         case buyPlan(String)
         case viewPackages
         case exportFormat(String) // "excel" or "txt"
@@ -1862,13 +1998,15 @@ final class TelegramBotService: @unchecked Sendable {
         case copyMenu // показать меню копирования
         case copyPart(String) // "title", "description", "bullets", "hashtags", "all"
         case viewGeneration(String) // UUID генерации для просмотра
-        case improveResult(String) // UUID генерации для улучшения
+        case improveResult(String) // UUID генерации для улучшения (по конкретному UUID)
         case viewHistory(Int, Int) // offset, limit
         
         init?(rawValue: String) {
             if rawValue.starts(with: "category_") {
                 let category = String(rawValue.dropFirst("category_".count))
                 self = .category(category)
+            } else if rawValue == "custom_category" {
+                self = .customCategory
             } else if rawValue.starts(with: "quick_generate_") {
                 let category = String(rawValue.dropFirst("quick_generate_".count))
                 self = .quickGenerate(category)
@@ -1878,6 +2016,8 @@ final class TelegramBotService: @unchecked Sendable {
                 self = .myBalance
             } else if rawValue == "export_last" {
                 self = .exportLast
+            } else if rawValue == "improve_last" {
+                self = .improveLast
             } else if rawValue.starts(with: "buy_") {
                 let plan = String(rawValue.dropFirst("buy_".count))
                 self = .buyPlan(plan)
