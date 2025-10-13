@@ -76,7 +76,7 @@ struct UserRepository {
     }
     
     /// Обновить выбранную категорию
-    func updateCategory(_ user: User, category: String) async throws {
+    func updateCategory(_ user: User, category: String?) async throws {
         user.selectedCategory = category
         try await user.update(on: database)
     }

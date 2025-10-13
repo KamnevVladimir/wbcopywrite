@@ -69,6 +69,9 @@ final class TelegramBotService: @unchecked Sendable {
         case "/balance":
             try await handleBalanceCommand(user: user, chatId: chatId)
             
+        case "/subscribe":
+            try await handleSubscribeCommand(user: user, chatId: chatId)
+            
         case "/cancel":
             try await handleCancelCommand(user: user, chatId: chatId)
             
@@ -168,8 +171,57 @@ final class TelegramBotService: @unchecked Sendable {
         try await sendMessage(chatId: chatId, text: balanceText)
     }
     
+    private func handleSubscribeCommand(user: User, chatId: Int64) async throws {
+        let repo = UserRepository(database: app.db)
+        let currentPlan = try await repo.getCurrentPlan(user)
+        
+        let subscribeText = """
+        💎 *Тарифные планы КарточкаПРО*
+        
+        Твой текущий план: *\(currentPlan.name)*
+        
+        📦 *Starter* - 299₽/мес
+        • 30 описаний в месяц
+        • Все категории товаров
+        • SEO-оптимизация
+        • Экономия 95% vs копирайтер!
+        
+        🚀 *Business* - 599₽/мес
+        • 150 описаний в месяц
+        • Все категории товаров
+        • SEO-оптимизация
+        • Идеально для активных селлеров
+        
+        💼 *Pro* - 999₽/мес
+        • 500 описаний в месяц
+        • Все категории товаров
+        • Приоритетная обработка
+        • Для крупных селлеров и агентств
+        
+        ⭐️ *Ultra* - 1,499₽/мес
+        • 1000 описаний в месяц
+        • Генерация по ФОТО 📷
+        • Все категории товаров
+        • Приоритетная поддержка
+        • Для power-селлеров
+        
+        💰 *ROI:* 1 описание от копирайтера = 500₽
+        С нашим ботом = 10₽! Экономия 98%!
+        
+        ⚠️ Скоро здесь будет оплата через Tribute!
+        Пока можно пользоваться Free планом (3 описания).
+        
+        Хочешь протестировать? Используй /generate
+        """
+        
+        try await sendMessage(chatId: chatId, text: subscribeText)
+    }
+    
     private func handleCancelCommand(user: User, chatId: Int64) async throws {
-        // TODO: Очистить состояние пользователя
+        // Очистить выбранную категорию
+        let repo = UserRepository(database: app.db)
+        try await repo.updateCategory(user, category: nil)
+        
         try await sendMessage(
             chatId: chatId,
             text: "✅ Действие отменено. Используй /start для возврата в меню."
