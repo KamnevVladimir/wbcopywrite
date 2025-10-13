@@ -1,5 +1,6 @@
 import Vapor
 import Fluent
+import SQLKit
 
 /// Repository для работы с пользователями
 /// Инкапсулирует всю логику работы с БД
@@ -82,112 +83,136 @@ struct UserRepository {
     }
     
     /// Списать 1 текстовый кредит (или увеличить старый счётчик, если кредитов нет)
-    /// Thread-safe: использует свежее чтение из БД перед обновлением
+    /// Thread-safe: использует атомарный SQL UPDATE для 100% защиты от race conditions
     func incrementGenerations(_ user: User) async throws {
-        // Перечитываем свежее состояние из БД (минимизируем race condition)
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .first() else {
+        // 🔒 ATOMIC: Используем raw SQL для атомарного UPDATE с условием
+        // Это единственный способ гарантировать отсутствие race condition!
+        
+        // Вариант 1: Если есть кредиты - списываем кредит
+        let creditsUpdated = try await (database as! SQLDatabase)
+            .raw("""
+                UPDATE users 
+                SET text_credits = text_credits - 1 
+                WHERE id = \(bind: user.id!) AND text_credits > 0
+                RETURNING text_credits, generations_used
+                """)
+            .first(decoding: CreditUpdateResult.self)
+        
+        if let result = creditsUpdated {
+            // Успешно списали кредит
+            user.textCredits = result.textCredits
+            user.generationsUsed = result.generationsUsed
+            return
+        }
+        
+        // Вариант 2: Если кредитов нет - инкрементим счётчик
+        let counterUpdated = try await (database as! SQLDatabase)
+            .raw("""
+                UPDATE users 
+                SET generations_used = generations_used + 1 
+                WHERE id = \(bind: user.id!)
+                RETURNING text_credits, generations_used
+                """)
+            .first(decoding: CreditUpdateResult.self)
+        
+        if let result = counterUpdated {
+            user.textCredits = result.textCredits
+            user.generationsUsed = result.generationsUsed
+        } else {
             throw Abort(.notFound, reason: "User not found")
         }
+    }
+    
+    // Вспомогательная структура для результата UPDATE
+    private struct CreditUpdateResult: Codable {
+        let textCredits: Int
+        let generationsUsed: Int
         
-        let creditsBefore = freshUser.textCredits
-        
-        // Атомарно проверяем и обновляем
-        if freshUser.textCredits > 0 {
-            freshUser.textCredits -= 1
-        } else {
-            freshUser.generationsUsed += 1
+        enum CodingKeys: String, CodingKey {
+            case textCredits = "text_credits"
+            case generationsUsed = "generations_used"
         }
-        
-        try await freshUser.update(on: database)
-        
-        // ⚠️ Проверка аномалий (критичный сценарий: отрицательные кредиты)
-        if freshUser.textCredits < 0 {
-            // Это НЕ ДОЛЖНО произойти! Сигнал о race condition
-            // TODO: Добавить Sentry alert
-            print("🚨 CRITICAL: Negative text credits detected! user=\(freshUser.telegramId) credits=\(freshUser.textCredits)")
-        }
-        
-        // Обновляем переданного пользователя для консистентности
-        user.textCredits = freshUser.textCredits
-        user.generationsUsed = freshUser.generationsUsed
     }
     
     /// Списать 1 фото кредит (или увеличить старый счётчик, если кредитов нет)
-    /// Thread-safe: использует свежее чтение из БД перед обновлением
+    /// Thread-safe: использует атомарный SQL UPDATE для 100% защиты от race conditions
     func incrementPhotoGenerations(_ user: User) async throws {
-        // Перечитываем свежее состояние из БД (минимизируем race condition)
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .first() else {
+        // 🔒 ATOMIC: Используем raw SQL для атомарного UPDATE с условием
+        
+        // Вариант 1: Если есть кредиты - списываем кредит
+        let creditsUpdated = try await (database as! SQLDatabase)
+            .raw("""
+                UPDATE users 
+                SET photo_credits = photo_credits - 1 
+                WHERE id = \(bind: user.id!) AND photo_credits > 0
+                RETURNING photo_credits, photo_generations_used
+                """)
+            .first(decoding: PhotoCreditUpdateResult.self)
+        
+        if let result = creditsUpdated {
+            // Успешно списали кредит
+            user.photoCredits = result.photoCredits
+            user.photoGenerationsUsed = result.photoGenerationsUsed
+            return
+        }
+        
+        // Вариант 2: Если кредитов нет - инкрементим счётчик
+        let counterUpdated = try await (database as! SQLDatabase)
+            .raw("""
+                UPDATE users 
+                SET photo_generations_used = photo_generations_used + 1 
+                WHERE id = \(bind: user.id!)
+                RETURNING photo_credits, photo_generations_used
+                """)
+            .first(decoding: PhotoCreditUpdateResult.self)
+        
+        if let result = counterUpdated {
+            user.photoCredits = result.photoCredits
+            user.photoGenerationsUsed = result.photoGenerationsUsed
+        } else {
             throw Abort(.notFound, reason: "User not found")
         }
+    }
+    
+    // Вспомогательная структура для результата UPDATE фото кредитов
+    private struct PhotoCreditUpdateResult: Codable {
+        let photoCredits: Int
+        let photoGenerationsUsed: Int
         
-        // Атомарно проверяем и обновляем
-        if freshUser.photoCredits > 0 {
-            freshUser.photoCredits -= 1
-        } else {
-            freshUser.photoGenerationsUsed += 1
+        enum CodingKeys: String, CodingKey {
+            case photoCredits = "photo_credits"
+            case photoGenerationsUsed = "photo_generations_used"
         }
-        
-        try await freshUser.update(on: database)
-        
-        // ⚠️ Проверка аномалий (критичный сценарий: отрицательные кредиты)
-        if freshUser.photoCredits < 0 {
-            // Это НЕ ДОЛЖНО произойти! Сигнал о race condition
-            print("🚨 CRITICAL: Negative photo credits detected! user=\(freshUser.telegramId) credits=\(freshUser.photoCredits)")
-        }
-        
-        // Обновляем переданного пользователя для консистентности
-        user.photoCredits = freshUser.photoCredits
-        user.photoGenerationsUsed = freshUser.photoGenerationsUsed
     }
     
     /// Откатить текстовую генерацию (если произошла ошибка после списания)
-    /// Thread-safe: перечитывает пользователя из БД
+    /// Thread-safe: использует атомарный SQL UPDATE
     func rollbackGeneration(_ user: User) async throws {
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .first() else {
-            return
-        }
-        
-        // Логика: возвращаем кредит ВСЕГДА если он был списан
-        // Проверяем что не превысим разумный лимит (защита от переполнения)
-        if freshUser.textCredits < 10000 {
-            freshUser.textCredits += 1
-        }
-        
-        // Также уменьшаем счётчик использованных (если он > 0)
-        if freshUser.generationsUsed > 0 {
-            freshUser.generationsUsed -= 1
-        }
-        
-        try await freshUser.update(on: database)
+        // 🔒 ATOMIC: Возвращаем кредит атомарно
+        _ = try await (database as! SQLDatabase)
+            .raw("""
+                UPDATE users 
+                SET text_credits = LEAST(text_credits + 1, 10000),
+                    generations_used = GREATEST(generations_used - 1, 0)
+                WHERE id = \(bind: user.id!)
+                RETURNING text_credits, generations_used
+                """)
+            .first(decoding: CreditUpdateResult.self)
     }
     
     /// Откатить фото генерацию (если произошла ошибка после списания)
-    /// Thread-safe: перечитывает пользователя из БД
+    /// Thread-safe: использует атомарный SQL UPDATE
     func rollbackPhotoGeneration(_ user: User) async throws {
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .first() else {
-            return
-        }
-        
-        // Логика: возвращаем кредит ВСЕГДА если он был списан
-        // Проверяем что не превысим разумный лимит (защита от переполнения)
-        if freshUser.photoCredits < 10000 {
-            freshUser.photoCredits += 1
-        }
-        
-        // Также уменьшаем счётчик использованных (если он > 0)
-        if freshUser.photoGenerationsUsed > 0 {
-            freshUser.photoGenerationsUsed -= 1
-        }
-        
-        try await freshUser.update(on: database)
+        // 🔒 ATOMIC: Возвращаем кредит атомарно
+        _ = try await (database as! SQLDatabase)
+            .raw("""
+                UPDATE users 
+                SET photo_credits = LEAST(photo_credits + 1, 10000),
+                    photo_generations_used = GREATEST(photo_generations_used - 1, 0)
+                WHERE id = \(bind: user.id!)
+                RETURNING photo_credits, photo_generations_used
+                """)
+            .first(decoding: PhotoCreditUpdateResult.self)
     }
     
     // MARK: - Queries
