@@ -15,6 +15,9 @@ let package = Package(
         
         // PostgreSQL driver
         .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.8.0"),
+        
+        // Sentry for error tracking (works with GlitchTip)
+        .package(url: "https://github.com/getsentry/sentry-swift.git", from: "8.0.0"),
     ],
     targets: [
         .executableTarget(
@@ -23,6 +26,7 @@ let package = Package(
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "Fluent", package: "fluent"),
                 .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
+                .product(name: "Sentry", package: "sentry-swift"),
             ],
             path: "Sources/App"
         )

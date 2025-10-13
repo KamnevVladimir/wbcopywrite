@@ -34,6 +34,13 @@ TRIBUTE_API_KEY=test_key
 TRIBUTE_SECRET=test_secret
 TRIBUTE_API_URL=https://api.tribute.to/v1
 
+# GlitchTip / Sentry (Error Tracking & Monitoring)
+# Получить: https://glitchtip.com/ -> New Project -> DSN
+# Формат: https://[key]@glitchtip.com/[project]
+GLITCHTIP_DSN=https://your_key@glitchtip.com/your_project
+# Или для Sentry:
+# SENTRY_DSN=https://your_key@sentry.io/your_project
+
 # Rate Limiting (лимиты генераций)
 RATE_LIMIT_FREE=3
 RATE_LIMIT_STARTER=30

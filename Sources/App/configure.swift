@@ -93,6 +93,13 @@ public func configure(_ app: Application) async throws {
     
     // MARK: - Tribute Service (Payments)
     
+    // MARK: - Monitoring Service (GlitchTip/Sentry)
+    
+    let monitoringService = MonitoringService(app: app)
+    app.monitoring = monitoringService
+    
+    // MARK: - Tribute Service
+    
     let tributeService = TributeService(
         app: app,
         apiKey: config.tributeApiKey,

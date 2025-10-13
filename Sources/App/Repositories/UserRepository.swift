@@ -91,6 +91,8 @@ struct UserRepository {
             throw Abort(.notFound, reason: "User not found")
         }
         
+        let creditsBefore = freshUser.textCredits
+        
         // Атомарно проверяем и обновляем
         if freshUser.textCredits > 0 {
             freshUser.textCredits -= 1
@@ -99,6 +101,13 @@ struct UserRepository {
         }
         
         try await freshUser.update(on: database)
+        
+        // ⚠️ Проверка аномалий (критичный сценарий: отрицательные кредиты)
+        if freshUser.textCredits < 0 {
+            // Это НЕ ДОЛЖНО произойти! Сигнал о race condition
+            // TODO: Добавить Sentry alert
+            print("🚨 CRITICAL: Negative text credits detected! user=\(freshUser.telegramId) credits=\(freshUser.textCredits)")
+        }
         
         // Обновляем переданного пользователя для консистентности
         user.textCredits = freshUser.textCredits
@@ -123,6 +132,12 @@ struct UserRepository {
         }
         
         try await freshUser.update(on: database)
+        
+        // ⚠️ Проверка аномалий (критичный сценарий: отрицательные кредиты)
+        if freshUser.photoCredits < 0 {
+            // Это НЕ ДОЛЖНО произойти! Сигнал о race condition
+            print("🚨 CRITICAL: Negative photo credits detected! user=\(freshUser.telegramId) credits=\(freshUser.photoCredits)")
+        }
         
         // Обновляем переданного пользователя для консистентности
         user.photoCredits = freshUser.photoCredits

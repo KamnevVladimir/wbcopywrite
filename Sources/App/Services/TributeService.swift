@@ -58,6 +58,18 @@ final class TributeService: @unchecked Sendable {
         
         if duplicate != nil {
             req.logger.info("⏭️ Duplicate webhook detected, skipping: \(event.id)")
+            
+            // 📊 Мониторинг дубликата
+            if let telegramId = Int64(event.data.userId) {
+                app.monitoring.trackPayment(
+                    userId: telegramId,
+                    amount: event.data.amount,
+                    plan: "unknown",
+                    success: true,
+                    isDuplicate: true
+                )
+            }
+            
             return
         }
         
@@ -94,6 +106,15 @@ final class TributeService: @unchecked Sendable {
         
         // Начисляем кредиты пользователю
         try await addCreditsToUser(telegramId: telegramId, plan: plan, on: req.db)
+        
+        // 📊 Мониторинг успешного платежа
+        app.monitoring.trackPayment(
+            userId: telegramId,
+            amount: event.data.amount,
+            plan: plan.name,
+            success: true,
+            isDuplicate: false
+        )
         
         // Отправляем уведомление пользователю
         try await notifyUserAboutPayment(telegramId: telegramId, plan: plan)
@@ -156,26 +177,40 @@ final class TributeService: @unchecked Sendable {
     }
     
     /// Начислить кредиты пользователю
-    /// Thread-safe: перечитывает пользователя из БД перед обновлением
+    /// Thread-safe: использует transaction для атомарности
     private func addCreditsToUser(
         telegramId: Int64,
         plan: Constants.SubscriptionPlan,
         on db: any Database
     ) async throws {
-        // Перечитываем свежее состояние пользователя
-        guard let user = try await User.query(on: db)
-            .filter(\.$telegramId == telegramId)
-            .first() else {
-            throw Abort(.notFound, reason: "User not found")
+        // 🔒 Используем транзакцию для атомарности
+        try await db.transaction { transactionDb in
+            // Перечитываем свежее состояние пользователя внутри транзакции
+            guard let user = try await User.query(on: transactionDb)
+                .filter(\.$telegramId == telegramId)
+                .first() else {
+                throw Abort(.notFound, reason: "User not found")
+            }
+            
+            let creditsBefore = user.textCredits
+            
+            // Начисляем кредиты
+            user.textCredits += plan.textGenerationsLimit
+            user.photoCredits += plan.photoGenerationsLimit
+            
+            try await user.update(on: transactionDb)
+            
+            // 📊 Мониторинг операции
+            self.app.monitoring.trackCreditOperation(
+                operation: .purchase,
+                userId: telegramId,
+                creditsBefore: creditsBefore,
+                creditsAfter: user.textCredits,
+                success: true
+            )
+            
+            self.app.logger.info("✅ Credits added: text=\(plan.textGenerationsLimit) photo=\(plan.photoGenerationsLimit) for user=\(telegramId)")
         }
-        
-        // Начисляем кредиты
-        user.textCredits += plan.textGenerationsLimit
-        user.photoCredits += plan.photoGenerationsLimit
-        
-        try await user.update(on: db)
-        
-        app.logger.info("✅ Credits added: text=\(plan.textGenerationsLimit) photo=\(plan.photoGenerationsLimit) for user=\(telegramId)")
     }
     
     /// Отправить уведомление пользователю об успешной оплате
