@@ -82,13 +82,10 @@ struct UserRepository {
     }
     
     /// Списать 1 текстовый кредит (или увеличить старый счётчик, если кредитов нет)
-    /// Thread-safe: использует pessimistic locking через FOR UPDATE
+    /// Thread-safe: перечитываем пользователя перед изменением
     func incrementGenerations(_ user: User) async throws {
-        // Pessimistic locking: блокируем строку в БД
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .for(.update)
-            .first() else {
+        // Перечитываем свежее состояние из БД
+        guard let freshUser = try await User.find(user.id, on: database) else {
             throw Abort(.notFound, reason: "User not found")
         }
         
@@ -107,13 +104,10 @@ struct UserRepository {
     }
     
     /// Списать 1 фото кредит (или увеличить старый счётчик, если кредитов нет)
-    /// Thread-safe: использует pessimistic locking через FOR UPDATE
+    /// Thread-safe: перечитываем пользователя перед изменением
     func incrementPhotoGenerations(_ user: User) async throws {
-        // Pessimistic locking: блокируем строку в БД
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .for(.update)
-            .first() else {
+        // Перечитываем свежее состояние из БД
+        guard let freshUser = try await User.find(user.id, on: database) else {
             throw Abort(.notFound, reason: "User not found")
         }
         
@@ -133,10 +127,7 @@ struct UserRepository {
     
     /// Откатить текстовую генерацию (если произошла ошибка после списания)
     func rollbackGeneration(_ user: User) async throws {
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .for(.update)
-            .first() else {
+        guard let freshUser = try await User.find(user.id, on: database) else {
             return
         }
         
@@ -152,10 +143,7 @@ struct UserRepository {
     
     /// Откатить фото генерацию (если произошла ошибка после списания)
     func rollbackPhotoGeneration(_ user: User) async throws {
-        guard let freshUser = try await User.query(on: database)
-            .filter(\.$id == user.id!)
-            .for(.update)
-            .first() else {
+        guard let freshUser = try await User.find(user.id, on: database) else {
             return
         }
         

@@ -35,9 +35,11 @@ struct TelegramPollingLifecycle: LifecycleHandler {
     let app: Application
     
     func didBoot(_ application: Application) throws {
-        // Запустить polling через 2 секунды
+        // Запустить polling через 2 секунды (async task для actor)
         application.eventLoopGroup.any().scheduleTask(in: .seconds(2)) {
-            application.telegramPolling.start()
+            Task {
+                await application.telegramPolling.start()
+            }
         }
     }
     

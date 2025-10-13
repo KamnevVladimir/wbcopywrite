@@ -891,9 +891,9 @@ final class TelegramBotService: @unchecked Sendable {
         let hashtagsText = description.hashtags.joined(separator: " ")
         
         // Smart Nudges в зависимости от остатка
+        let plan = try await repo.getCurrentPlan(user)
+        let isFree = plan == .free
         let nudge: String = {
-            let plan = try? await repo.getCurrentPlan(user)
-            let isFree = plan == .free
             
             if remainingText == 1 && isFree {
                 // Остался последний FREE кредит
@@ -1226,10 +1226,10 @@ final class TelegramBotService: @unchecked Sendable {
             .first()
         
         guard let generation = lastGeneration,
-              let title = generation.resultTitle,
-              let description = generation.resultDescription,
-              let bullets = generation.resultBullets,
-              let hashtags = generation.resultHashtags else {
+              let _ = generation.resultTitle,
+              let _ = generation.resultDescription,
+              let _ = generation.resultBullets,
+              let _ = generation.resultHashtags else {
             try await sendMessage(
                 chatId: chatId,
                 text: "❌ Нет данных для экспорта. Создай описание сначала!"
@@ -1368,10 +1368,10 @@ final class TelegramBotService: @unchecked Sendable {
             .first()
         
         guard let generation = lastGeneration,
-              let title = generation.resultTitle,
-              let description = generation.resultDescription,
-              let bullets = generation.resultBullets,
-              let hashtags = generation.resultHashtags else {
+              generation.resultTitle != nil,
+              generation.resultDescription != nil,
+              generation.resultBullets != nil,
+              generation.resultHashtags != nil else {
             try await sendMessage(
                 chatId: chatId,
                 text: "❌ Нет сохранённых описаний для экспорта. Сначала сгенерируй описание!"
@@ -1380,6 +1380,11 @@ final class TelegramBotService: @unchecked Sendable {
         }
         
         // Формируем текстовый файл
+        let title = generation.resultTitle!
+        let description = generation.resultDescription!
+        let bullets = generation.resultBullets!
+        let hashtags = generation.resultHashtags!
+        
         let bulletsText = bullets.map { "• \($0)" }.joined(separator: "\n")
         let hashtagsText = hashtags.joined(separator: " ")
         
@@ -1710,7 +1715,7 @@ final class TelegramBotService: @unchecked Sendable {
         app.logger.info("✅ Credit reserved for improvement")
         
         // Показываем прогресс
-        let progressMessage = try await sendMessage(
+        _ = try await sendMessage(
             chatId: chatId,
             text: "⏳ *Улучшаю описание...* ✨"
         )

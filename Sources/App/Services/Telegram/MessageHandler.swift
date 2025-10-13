@@ -114,7 +114,7 @@ final class MessageHandler: @unchecked Sendable {
         // 🔒 Резервируем кредит
         try await repo.incrementGenerations(user)
         
-        let progressMsg = try await api.sendMessage(
+        _ = try await api.sendMessage(
             chatId: chatId,
             text: "⏳ *Улучшаю описание...* ✨"
         )

@@ -2,7 +2,7 @@ import Fluent
 import Vapor
 
 /// Запись об обработанном вебхуке (для защиты от дубликатов)
-final class ProcessedWebhook: Model, Content {
+final class ProcessedWebhook: Model, Content, @unchecked Sendable {
     static let schema = "processed_webhooks"
     
     @ID(key: .id)

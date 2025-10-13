@@ -1,4 +1,5 @@
 import Vapor
+import Fluent
 import Crypto
 
 /// Сервис для работы с Tribute API (платежи)
@@ -145,8 +146,8 @@ final class TributeService: @unchecked Sendable {
         }
         
         // Вариант 3: По сумме (fallback)
-        let amount = event.data.amount / 100 // копейки → рубли
-        if let plan = Constants.SubscriptionPlan.allCases.first(where: { $0.price == amount }) {
+        let amountRub = event.data.amount / 100 // копейки → рубли
+        if let plan = Constants.SubscriptionPlan.allCases.first(where: { Int(truncating: $0.price as NSNumber) == amountRub }) {
             return plan
         }
         
@@ -158,7 +159,7 @@ final class TributeService: @unchecked Sendable {
     private func addCreditsToUser(
         telegramId: Int64,
         plan: Constants.SubscriptionPlan,
-        on db: Database
+        on db: any Database
     ) async throws {
         let repo = UserRepository(database: db)
         

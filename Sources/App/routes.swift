@@ -68,7 +68,7 @@ func routes(_ app: Application) throws {
         return CreatePaymentResponse(
             paymentUrl: paymentUrl,
             plan: plan.name,
-            amount: plan.price
+            amount: Int(truncating: plan.price as NSNumber)
         )
     }
     
@@ -83,7 +83,7 @@ func routes(_ app: Application) throws {
         // Шаг 2: Проверить подпись (опционально, если Tribute её отправляет)
         if let signature = req.headers.first(name: "X-Tribute-Signature") {
             let isValid = req.application.tribute.verifyWebhookSignature(
-                payload: body,
+                payload: Data(buffer: body),
                 signature: signature
             )
             
