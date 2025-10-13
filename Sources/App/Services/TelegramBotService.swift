@@ -50,8 +50,13 @@ final class TelegramBotService: @unchecked Sendable {
         if text.starts(with: "/") {
             try await handleCommand(text, user: user, chatId: message.chat.id)
         } else {
-            // Обработка текста товара для генерации
-            try await handleProductDescription(text: text, user: user, chatId: message.chat.id)
+            // Проверяем, ожидается ли улучшение описания
+            if let category = user.selectedCategory, category.starts(with: "improve_") {
+                try await handleImproveInput(text: text, user: user, chatId: message.chat.id)
+            } else {
+                // Обработка текста товара для генерации
+                try await handleProductDescription(text: text, user: user, chatId: message.chat.id)
+            }
         }
     }
     
@@ -126,7 +131,7 @@ final class TelegramBotService: @unchecked Sendable {
         ]]
         
         let fullKeyboard = TelegramReplyMarkup(
-            inlineKeyboard: categoryKeyboard.inlineKeyboard + subscribeButton
+            inlineKeyboard: (categoryKeyboard.inlineKeyboard ?? []) + subscribeButton
         )
         
         try await sendMessage(
@@ -186,16 +191,28 @@ final class TelegramBotService: @unchecked Sendable {
     private func handleBalanceCommand(user: User, chatId: Int64) async throws {
         let repo = UserRepository(database: app.db)
         let plan = try await repo.getCurrentPlan(user)
-        let remaining = try await repo.getRemainingGenerations(user)
-        let total = plan.generationsLimit
+        let remainingText = try await repo.getRemainingGenerations(user)
+        let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
         
-        let balanceText = Constants.BotMessage.subscriptionInfo(
-            plan: plan,
-            remaining: remaining,
-            total: total
-        )
+        let balanceText = """
+        💰 *Твой баланс*
         
-        try await sendMessage(chatId: chatId, text: balanceText)
+        📦 *Текущий пакет:* \(plan.emoji) \(plan.name)
+        
+        📊 *Осталось генераций:*
+        • Текстовых: \(remainingText) из \(plan.textGenerationsLimit)
+        • С фото: \(remainingPhoto) из \(plan.photoGenerationsLimit)
+        • Всего: \(remainingText + remainingPhoto) из \(plan.totalGenerationsLimit)
+        
+        💡 *Цена за генерацию:* \(plan.pricePerGeneration) ₽
+        """
+        
+        let buttons = [[
+            TelegramInlineKeyboardButton(text: "💎 Пакеты", callbackData: "view_packages")
+        ]]
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
+        
+        try await sendMessage(chatId: chatId, text: balanceText, replyMarkup: keyboard)
     }
     
     private func handleSubscribeCommand(user: User, chatId: Int64) async throws {
@@ -250,13 +267,16 @@ final class TelegramBotService: @unchecked Sendable {
         try await sendMessage(chatId: chatId, text: subscribeText)
     }
     
-    private func handleHistoryCommand(user: User, chatId: Int64) async throws {
-        // Получить последние 10 генераций
+    private func handleHistoryCommand(user: User, chatId: Int64, offset: Int = 0, limit: Int = 5) async throws {
         let generations = try await Generation.query(on: app.db)
             .filter(\.$user.$id == user.id!)
             .sort(\.$createdAt, .descending)
-            .limit(10)
+            .range(offset..<(offset + limit))
             .all()
+        
+        let totalCount = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .count()
         
         guard !generations.isEmpty else {
             try await sendMessage(
@@ -270,25 +290,45 @@ final class TelegramBotService: @unchecked Sendable {
         dateFormatter.dateFormat = "dd MMM, HH:mm"
         dateFormatter.locale = Locale(identifier: "ru_RU")
         
-        var historyText = "📜 *Твои описания* (всего: \(generations.count)):\n\n"
+        var historyText = "📜 *История генераций* (\(offset+1)-\(offset+generations.count) из \(totalCount)):\n\n"
+        
+        var buttons: [[TelegramInlineKeyboardButton]] = []
         
         for (index, gen) in generations.enumerated() {
             let date = dateFormatter.string(from: gen.createdAt ?? Date())
             let categoryEmoji = Constants.ProductCategory(rawValue: gen.category)?.emoji ?? "📝"
-            let title = gen.resultTitle?.prefix(40) ?? "Без названия"
+            let title = (gen.resultTitle ?? gen.productName).prefix(35)
             
-            historyText += "\(index + 1)️⃣ \(date) | \(categoryEmoji)\n"
-            historyText += "_\(title)..._\n\n"
+            historyText += "\(offset + index + 1)️⃣ \(categoryEmoji) \(date)\n"
+            historyText += "\(title)...\n\n"
+            
+            // Кнопки для каждой генерации
+            if let genId = gen.id?.uuidString {
+                buttons.append([
+                    TelegramInlineKeyboardButton(text: "👁 #\(offset + index + 1)", callbackData: "view_gen_\(genId)"),
+                    TelegramInlineKeyboardButton(text: "✨ Улучшить", callbackData: "improve_\(genId)")
+                ])
+            }
         }
         
-        historyText += "━━━━━━━━━━━━━━━━━━━\n"
-        historyText += "Используй /generate для новой генерации\n"
-        historyText += "❓ Вопросы? \(Constants.Support.username)"
+        // Пагинация
+        var paginationButtons: [TelegramInlineKeyboardButton] = []
+        if offset > 0 {
+            paginationButtons.append(TelegramInlineKeyboardButton(text: "⬅️ Назад", callbackData: "history_\(max(0, offset - limit))_\(limit)"))
+        }
+        if offset + limit < totalCount {
+            paginationButtons.append(TelegramInlineKeyboardButton(text: "Вперёд ➡️", callbackData: "history_\(offset + limit)_\(limit)"))
+        }
+        if !paginationButtons.isEmpty {
+            buttons.append(paginationButtons)
+        }
         
-        // Кнопка для экспорта всех в Excel
-        let keyboard = TelegramReplyMarkup(inlineKeyboard: [
-            [TelegramInlineKeyboardButton(text: "📊 Скачать все в Excel", callbackData: "export_all_excel")]
+        // Кнопка экспорта всего
+        buttons.append([
+            TelegramInlineKeyboardButton(text: "📊 Экспорт всех в Excel", callbackData: "export_all_excel")
         ])
+        
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
         
         try await sendMessage(chatId: chatId, text: historyText, replyMarkup: keyboard)
     }
@@ -362,6 +402,21 @@ final class TelegramBotService: @unchecked Sendable {
             
         case .viewPackages:
             try await handleSubscribeCommand(user: user, chatId: chatId)
+            
+        case .copyMenu:
+            try await handleCopyMenu(user: user, chatId: chatId)
+            
+        case .copyPart(let part):
+            try await handleCopyPart(part: part, user: user, chatId: chatId, callbackId: callback.id)
+            
+        case .viewGeneration(let uuid):
+            try await handleViewGeneration(uuid: uuid, user: user, chatId: chatId)
+            
+        case .improveResult(let uuid):
+            try await handleImproveResult(generationUuid: uuid, user: user, chatId: chatId)
+            
+        case .viewHistory(let offset, let limit):
+            try await handleHistoryCommand(user: user, chatId: chatId, offset: offset, limit: limit)
         }
         
         // Подтвердить callback
@@ -499,7 +554,6 @@ final class TelegramBotService: @unchecked Sendable {
         let repo = UserRepository(database: app.db)
         let remainingText = try await repo.getRemainingGenerations(user)
         let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
-        let plan = try await repo.getCurrentPlan(user)
         
         // Получаем текущую категорию
         let currentCategory = user.selectedCategory.flatMap { Constants.ProductCategory(rawValue: $0) }
@@ -563,7 +617,12 @@ final class TelegramBotService: @unchecked Sendable {
             TelegramInlineKeyboardButton(text: "💰 Баланс", callbackData: "my_balance")
         ])
         
-        // Третья строка: экспорт + подписка
+        // Третья строка: копирование по частям
+        buttons.append([
+            TelegramInlineKeyboardButton(text: "📋 Скопировать части", callbackData: "copy_menu")
+        ])
+        
+        // Четвертая строка: экспорт + подписка
         buttons.append([
             TelegramInlineKeyboardButton(text: "📄 Экспорт", callbackData: "export_last"),
             TelegramInlineKeyboardButton(text: "💎 Пакеты", callbackData: "view_packages")
@@ -864,6 +923,254 @@ final class TelegramBotService: @unchecked Sendable {
         try await sendMessage(chatId: chatId, text: buyText)
     }
     
+    // MARK: - Copy Parts Feature (FR-8)
+    
+    private func handleCopyMenu(user: User, chatId: Int64) async throws {
+        // Проверяем, есть ли генерации
+        let hasGenerations = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .count() > 0
+        
+        guard hasGenerations else {
+            try await sendMessage(chatId: chatId, text: "❌ У тебя пока нет генераций для копирования.")
+            return
+        }
+        
+        let menuText = """
+        📋 *Копирование по частям*
+        
+        Выбери, что скопировать из последней генерации:
+        """
+        
+        let buttons: [[TelegramInlineKeyboardButton]] = [
+            [TelegramInlineKeyboardButton(text: "📝 Заголовок", callbackData: "copy_title")],
+            [TelegramInlineKeyboardButton(text: "📄 Описание", callbackData: "copy_description")],
+            [TelegramInlineKeyboardButton(text: "🎯 Ключевые выгоды", callbackData: "copy_bullets")],
+            [TelegramInlineKeyboardButton(text: "🏷 Хештеги", callbackData: "copy_hashtags")],
+            [TelegramInlineKeyboardButton(text: "📋 Всё сразу", callbackData: "copy_all")]
+        ]
+        
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
+        
+        try await sendMessage(chatId: chatId, text: menuText, replyMarkup: keyboard)
+    }
+    
+    private func handleCopyPart(part: String, user: User, chatId: Int64, callbackId: String) async throws {
+        // Получаем последнюю генерацию
+        guard let lastGeneration = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .first() else {
+            try await answerCallback(callbackId: callbackId, text: "❌ Нет данных для копирования")
+            return
+        }
+        
+        let content: String
+        let label: String
+        
+        switch part {
+        case "title":
+            content = lastGeneration.resultTitle ?? ""
+            label = "📝 Заголовок"
+        case "description":
+            content = lastGeneration.resultDescription ?? ""
+            label = "📄 Описание"
+        case "bullets":
+            content = (lastGeneration.resultBullets ?? []).joined(separator: "\n")
+            label = "🎯 Ключевые выгоды"
+        case "hashtags":
+            content = (lastGeneration.resultHashtags ?? []).joined(separator: " ")
+            label = "🏷 Хештеги"
+        case "all":
+            let bullets = (lastGeneration.resultBullets ?? []).joined(separator: "\n")
+            let hashtags = (lastGeneration.resultHashtags ?? []).joined(separator: " ")
+            content = """
+            \(lastGeneration.resultTitle ?? "")
+            
+            \(lastGeneration.resultDescription ?? "")
+            
+            \(bullets)
+            
+            \(hashtags)
+            """
+            label = "📋 Полное описание"
+        default:
+            try await answerCallback(callbackId: callbackId, text: "❌ Неизвестная часть")
+            return
+        }
+        
+        // Отправляем контент для копирования
+        try await sendMessage(chatId: chatId, text: "```\n\(content)\n```")
+        try await answerCallback(callbackId: callbackId, text: "✅ \(label) скопирован!")
+    }
+    
+    // MARK: - View Generation Feature
+    
+    private func handleViewGeneration(uuid: String, user: User, chatId: Int64) async throws {
+        guard let generationUuid = UUID(uuidString: uuid),
+              let generation = try await Generation.find(generationUuid, on: app.db) else {
+            try await sendMessage(chatId: chatId, text: "❌ Генерация не найдена")
+            return
+        }
+        
+        // Показываем полное описание
+        let bullets = (generation.resultBullets ?? []).map { "• \($0)" }.joined(separator: "\n")
+        let hashtags = (generation.resultHashtags ?? []).joined(separator: " ")
+        
+        let resultText = """
+        ✅ *Твоя генерация*
+        
+        📝 *ЗАГОЛОВОК:*
+        \(generation.resultTitle ?? "")
+        
+        📄 *ОПИСАНИЕ:*
+        \(generation.resultDescription ?? "")
+        
+        🎯 *КЛЮЧЕВЫЕ ВЫГОДЫ:*
+        \(bullets)
+        
+        🏷 *ХЕШТЕГИ:*
+        \(hashtags)
+        """
+        
+        let buttons: [[TelegramInlineKeyboardButton]] = [
+            [
+                TelegramInlineKeyboardButton(text: "✨ Улучшить это", callbackData: "improve_\(uuid)"),
+                TelegramInlineKeyboardButton(text: "📋 Копировать", callbackData: "copy_menu")
+            ],
+            [
+                TelegramInlineKeyboardButton(text: "📄 Экспорт", callbackData: "export_last")
+            ]
+        ]
+        
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
+        
+        try await sendMessage(chatId: chatId, text: resultText, replyMarkup: keyboard)
+    }
+    
+    // MARK: - Improve Result Feature (FR-5)
+    
+    private func handleImproveResult(generationUuid: String, user: User, chatId: Int64) async throws {
+        // Находим генерацию
+        guard let uuid = UUID(uuidString: generationUuid),
+              let generation = try await Generation.find(uuid, on: app.db) else {
+            try await sendMessage(chatId: chatId, text: "❌ Генерация не найдена")
+            return
+        }
+        
+        // Проверяем лимит
+        let repo = UserRepository(database: app.db)
+        guard try await repo.hasGenerationsAvailable(user) else {
+            try await sendMessage(chatId: chatId, text: Constants.BotMessage.limitExceeded)
+            return
+        }
+        
+        // Просим пользователя указать, что улучшить
+        let improveText = """
+        ✨ *Улучшение описания*
+        
+        Текущее описание:
+        _\((generation.resultTitle ?? "").prefix(50))..._
+        
+        Напиши, что хочешь изменить или улучшить:
+        
+        Например:
+        • "Сделай более эмоциональным"
+        • "Добавь больше конкретики"
+        • "Сделай короче"
+        • "Упор на экологичность"
+        
+        Или отправь /cancel для отмены.
+        """
+        
+        // Сохраняем UUID генерации для улучшения
+        user.selectedCategory = "improve_\(generationUuid)"
+        try await user.save(on: app.db)
+        
+        try await sendMessage(chatId: chatId, text: improveText)
+    }
+    
+    private func handleImproveInput(text: String, user: User, chatId: Int64) async throws {
+        // Извлекаем UUID из selectedCategory
+        guard let category = user.selectedCategory,
+              category.starts(with: "improve_"),
+              let uuidString = category.split(separator: "_").last,
+              let uuid = UUID(uuidString: String(uuidString)),
+              let originalGeneration = try await Generation.find(uuid, on: app.db) else {
+            try await sendMessage(chatId: chatId, text: "❌ Ошибка: не найдена оригинальная генерация")
+            return
+        }
+        
+        // Очищаем selectedCategory
+        user.selectedCategory = nil
+        try await user.save(on: app.db)
+        
+        app.logger.info("✨ Improving generation \(uuid) for user \(user.telegramId)")
+        
+        // Показываем прогресс
+        let progressMessage = try await sendMessage(
+            chatId: chatId,
+            text: "⏳ *Улучшаю описание...* ✨"
+        )
+        
+        do {
+            // Создаём промпт для улучшения
+            let bullets = (originalGeneration.resultBullets ?? []).joined(separator: "\n")
+            let hashtags = (originalGeneration.resultHashtags ?? []).joined(separator: " ")
+            
+            let improvePrompt = """
+            ЗАДАЧА: Улучши существующее описание товара согласно пожеланиям клиента.
+            
+            ОРИГИНАЛЬНОЕ ОПИСАНИЕ:
+            Заголовок: \(originalGeneration.resultTitle ?? "")
+            Описание: \(originalGeneration.resultDescription ?? "")
+            Выгоды: \(bullets)
+            Хештеги: \(hashtags)
+            
+            ПОЖЕЛАНИЯ КЛИЕНТА:
+            \(text)
+            
+            Создай УЛУЧШЕННУЮ версию с учётом пожеланий. Сохрани структуру (заголовок, описание, bullets, hashtags).
+            """
+            
+            // Вызываем Claude API
+            guard let category = Constants.ProductCategory(rawValue: originalGeneration.category) else {
+                throw Abort(.badRequest, reason: "Invalid category")
+            }
+            
+            let description = try await app.claude.generateProductDescription(
+                productInfo: improvePrompt,
+                category: category
+            )
+            
+            // Сохраняем улучшенную генерацию
+            let generation = Generation(
+                userId: user.id!,
+                category: originalGeneration.category,
+                productName: "✨ Улучшение: \(originalGeneration.productName)",
+                productDetails: text
+            )
+            generation.resultTitle = description.title
+            generation.resultDescription = description.description
+            generation.resultBullets = description.bullets
+            generation.resultHashtags = description.hashtags
+            try await generation.save(on: app.db)
+            
+            // Инкрементируем счётчик
+            let repo = UserRepository(database: app.db)
+            try await repo.incrementGenerations(user)
+            
+            // Отправляем результат
+            try await sendGenerationResult(chatId: chatId, description: description, user: user)
+            
+            app.logger.info("✅ Successfully improved generation for user \(user.telegramId)")
+            
+        } catch {
+            app.logger.error("❌ Error improving generation: \(error)")
+            try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
+        }
+    }
+    
     // MARK: - Helpers
     
     private func getOrCreateUser(from telegramUser: TelegramUser, chatId: Int64) async throws -> User {
@@ -1073,6 +1380,11 @@ final class TelegramBotService: @unchecked Sendable {
         case viewPackages
         case exportFormat(String) // "excel" or "txt"
         case exportAllExcel
+        case copyMenu // показать меню копирования
+        case copyPart(String) // "title", "description", "bullets", "hashtags", "all"
+        case viewGeneration(String) // UUID генерации для просмотра
+        case improveResult(String) // UUID генерации для улучшения
+        case viewHistory(Int, Int) // offset, limit
         
         init?(rawValue: String) {
             if rawValue.starts(with: "category_") {
@@ -1094,6 +1406,24 @@ final class TelegramBotService: @unchecked Sendable {
                 self = .viewPackages
             } else if rawValue == "export_all_excel" {
                 self = .exportAllExcel
+            } else if rawValue == "copy_menu" {
+                self = .copyMenu
+            } else if rawValue.starts(with: "copy_") {
+                let part = String(rawValue.dropFirst("copy_".count))
+                self = .copyPart(part)
+            } else if rawValue.starts(with: "view_gen_") {
+                let uuid = String(rawValue.dropFirst("view_gen_".count))
+                self = .viewGeneration(uuid)
+            } else if rawValue.starts(with: "improve_") {
+                let uuid = String(rawValue.dropFirst("improve_".count))
+                self = .improveResult(uuid)
+            } else if rawValue.starts(with: "history_") {
+                let parts = rawValue.dropFirst("history_".count).split(separator: "_")
+                if parts.count == 2, let offset = Int(parts[0]), let limit = Int(parts[1]) {
+                    self = .viewHistory(offset, limit)
+                } else {
+                    return nil
+                }
             } else if rawValue.starts(with: "export_") {
                 let format = String(rawValue.dropFirst("export_".count))
                 self = .exportFormat(format)

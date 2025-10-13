@@ -51,7 +51,7 @@ final class Subscription: Model, Content, @unchecked Sendable {
         self.$user.id = userId
         self.planRaw = plan.rawValue
         self.statusRaw = status.rawValue
-        self.generationsLimit = plan.generationsLimit
+        self.generationsLimit = plan.totalGenerationsLimit
         self.price = plan.price
         self.startedAt = startedAt
         self.expiresAt = expiresAt ?? Calendar.current.date(byAdding: .month, value: 1, to: startedAt)!
