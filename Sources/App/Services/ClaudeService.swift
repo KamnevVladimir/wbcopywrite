@@ -94,12 +94,19 @@ final class ClaudeService: @unchecked Sendable {
         let uri = URI(string: "\(baseURL)/messages")
         
         let request = ClaudeRequest(
-            model: "claude-3-5-sonnet-20240620",
+            model: "claude-3-5-sonnet-latest",
             maxTokens: 2000,
             messages: [
                 ClaudeRequest.Message(role: "user", content: prompt)
             ]
         )
+        
+        // Детальное логирование запроса
+        app.logger.info("🔵 Claude API Request:")
+        app.logger.info("  Model: \(request.model)")
+        app.logger.info("  Max tokens: \(request.maxTokens)")
+        app.logger.info("  Prompt length: \(prompt.count) chars")
+        app.logger.debug("  Prompt preview: \(prompt.prefix(200))...")
         
         let response = try await app.client.post(uri) { req in
             req.headers.add(name: "x-api-key", value: apiKey)
@@ -107,17 +114,31 @@ final class ClaudeService: @unchecked Sendable {
             req.headers.contentType = .json
             
             try req.content.encode(request)
+            
+            // Логирование отправляемого JSON
+            if let jsonData = try? JSONEncoder().encode(request),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                app.logger.debug("  Request JSON: \(jsonString)")
+            }
         }
+        
+        // Детальное логирование ответа
+        app.logger.info("🔵 Claude API Response: \(response.status)")
         
         guard response.status == HTTPStatus.ok else {
             app.logger.error("❌ Claude API error: \(response.status)")
             
             // Логировать полный ответ для отладки
             if let bodyString = response.body.flatMap({ String(buffer: $0) }) {
-                app.logger.error("Response body: \(bodyString)")
+                app.logger.error("❌ Response body: \(bodyString)")
             }
             
             throw ClaudeError.apiError(response.status)
+        }
+        
+        // Логировать успешный ответ
+        if let bodyString = response.body.flatMap({ String(buffer: $0) }) {
+            app.logger.debug("✅ Response body: \(bodyString.prefix(500))...")
         }
         
         return try response.content.decode(ClaudeResponse.self)
@@ -167,7 +188,7 @@ final class ClaudeService: @unchecked Sendable {
         }
         
         let request = VisionRequest(
-            model: "claude-3-5-sonnet-20240620",
+            model: "claude-3-5-sonnet-latest",
             maxTokens: 2000,
             messages: [
                 VisionMessage(
@@ -192,6 +213,14 @@ final class ClaudeService: @unchecked Sendable {
             ]
         )
         
+        // Детальное логирование Vision запроса
+        app.logger.info("🔵 Claude Vision API Request:")
+        app.logger.info("  Model: \(request.model)")
+        app.logger.info("  Max tokens: \(request.maxTokens)")
+        app.logger.info("  Image size: \(imageBase64.count) chars (base64)")
+        app.logger.info("  Media type: \(mediaType)")
+        app.logger.info("  Prompt length: \(prompt.count) chars")
+        
         let response = try await app.client.post(uri) { req in
             req.headers.add(name: "x-api-key", value: apiKey)
             req.headers.add(name: "anthropic-version", value: "2023-06-01")
@@ -200,15 +229,23 @@ final class ClaudeService: @unchecked Sendable {
             try req.content.encode(request)
         }
         
+        // Детальное логирование ответа
+        app.logger.info("🔵 Claude Vision API Response: \(response.status)")
+        
         guard response.status == HTTPStatus.ok else {
             app.logger.error("❌ Claude Vision API error: \(response.status)")
             
             // Логировать полный ответ для отладки
             if let bodyString = response.body.flatMap({ String(buffer: $0) }) {
-                app.logger.error("Response body: \(bodyString)")
+                app.logger.error("❌ Response body: \(bodyString)")
             }
             
             throw ClaudeError.apiError(response.status)
+        }
+        
+        // Логировать успешный ответ
+        if let bodyString = response.body.flatMap({ String(buffer: $0) }) {
+            app.logger.debug("✅ Response body: \(bodyString.prefix(500))...")
         }
         
         return try response.content.decode(ClaudeResponse.self)

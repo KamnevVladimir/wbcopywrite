@@ -224,9 +224,14 @@ final class TelegramBotService: @unchecked Sendable {
     private func handleProductDescription(text: String, user: User, chatId: Int64) async throws {
         let repo = UserRepository(database: app.db)
         
+        app.logger.info("🟢 Starting product description generation")
+        app.logger.info("  User: \(user.telegramId)")
+        app.logger.info("  Text: \(text)")
+        
         // Проверка что категория выбрана
         guard let categoryRaw = user.selectedCategory,
               let category = Constants.ProductCategory(rawValue: categoryRaw) else {
+            app.logger.warning("⚠️ Category not selected for user \(user.telegramId)")
             try await sendMessage(
                 chatId: chatId,
                 text: "⚠️ Сначала выбери категорию товара через /start"
@@ -234,8 +239,14 @@ final class TelegramBotService: @unchecked Sendable {
             return
         }
         
+        app.logger.info("  Category: \(category.name)")
+        
         // Проверка лимитов
+        let remaining = try await repo.getRemainingGenerations(user)
+        app.logger.info("  Remaining generations: \(remaining)")
+        
         guard try await repo.hasGenerationsAvailable(user) else {
+            app.logger.warning("⚠️ User \(user.telegramId) exceeded limit")
             try await sendMessage(chatId: chatId, text: Constants.BotMessage.limitExceeded)
             return
         }
@@ -244,13 +255,22 @@ final class TelegramBotService: @unchecked Sendable {
         try await sendMessage(chatId: chatId, text: Constants.BotMessage.generating)
         
         do {
+            app.logger.info("🟢 Calling Claude API...")
+            
             // Вызвать Claude API
             let description = try await app.claude.generateProductDescription(
                 productInfo: text,
                 category: category
             )
             
+            app.logger.info("🟢 Claude API responded successfully")
+            app.logger.info("  Tokens used: \(description.tokensUsed)")
+            app.logger.info("  Processing time: \(description.processingTimeMs)ms")
+            app.logger.info("  Title: \(description.title)")
+            
             // Сохранить в БД
+            app.logger.info("🟢 Saving to database...")
+            
             let generation = Generation(
                 userId: user.id!,
                 category: category.rawValue,
@@ -265,21 +285,27 @@ final class TelegramBotService: @unchecked Sendable {
             generation.resultHashtags = description.hashtags
             
             try await generation.save(on: app.db)
+            app.logger.info("🟢 Saved to database: \(generation.id?.uuidString ?? "unknown")")
             
             // Увеличить счетчик
             try await repo.incrementGenerations(user)
+            app.logger.info("🟢 Incremented user counter. Used: \(user.generationsUsed + 1)")
             
             // Отправить результат
+            app.logger.info("🟢 Sending result to user...")
             try await sendGenerationResult(
                 chatId: chatId,
                 description: description,
                 user: user
             )
             
-            app.logger.info("✅ Generated description for user \(user.telegramId) in \(description.processingTimeMs)ms")
+            app.logger.info("✅ Successfully generated description for user \(user.telegramId) in \(description.processingTimeMs)ms")
             
         } catch {
             app.logger.error("❌ Generation error: \(error)")
+            app.logger.error("❌ Error type: \(type(of: error))")
+            app.logger.error("❌ Error description: \(String(describing: error))")
+            
             try await sendMessage(chatId: chatId, text: Constants.BotMessage.error)
         }
     }

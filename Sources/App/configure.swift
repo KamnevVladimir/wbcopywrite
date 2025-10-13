@@ -9,6 +9,12 @@ public func configure(_ app: Application) async throws {
     app.environmentConfig = try EnvironmentConfig.load()
     let config = app.environmentConfig
     
+    // MARK: - Logging Configuration
+    
+    // Временно включаем debug логирование для отладки Claude API
+    app.logger.logLevel = .debug
+    app.logger.info("📝 Log level set to: debug (temporary for debugging)")
+    
     // MARK: - Server Configuration
     
     // Railway provides PORT environment variable
@@ -66,6 +72,9 @@ public func configure(_ app: Application) async throws {
     }
     
     // MARK: - Middleware
+    
+    // Request logging
+    app.middleware.use(RequestLoggingMiddleware())
     
     // Error handling
     app.middleware.use(ErrorMiddleware.default(environment: app.environment))

@@ -20,7 +20,7 @@ struct ClaudeRequest: Content {
         let content: String
     }
     
-    init(model: String = "claude-3-5-sonnet-20240620", maxTokens: Int = 2048, system: String? = nil, messages: [Message]) {
+    init(model: String = "claude-3-5-sonnet-latest", maxTokens: Int = 2048, system: String? = nil, messages: [Message]) {
         self.model = model
         self.maxTokens = maxTokens
         self.system = system
