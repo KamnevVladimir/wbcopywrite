@@ -419,11 +419,24 @@ final class TelegramBotService: @unchecked Sendable {
             return
         }
         
-        // Показать "Генерирую..."
-        try await sendMessage(chatId: chatId, text: Constants.BotMessage.generating)
+        // Показать прогресс генерации
+        let progressMessage = try await sendMessage(
+            chatId: chatId,
+            text: "⏳ *Анализирую товар...* 🔍"
+        )
         
         do {
             app.logger.info("🟢 Calling Claude API...")
+            
+            // Обновляем статус через 3 секунды
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await editMessage(
+                    chatId: chatId,
+                    messageId: progressMessage,
+                    text: "⏳ *Генерирую описание...* ✍️"
+                )
+            }
             
             // Вызвать Claude API
             let description = try await app.claude.generateProductDescription(
@@ -491,22 +504,40 @@ final class TelegramBotService: @unchecked Sendable {
         // Получаем текущую категорию
         let currentCategory = user.selectedCategory.flatMap { Constants.ProductCategory(rawValue: $0) }
         
-        let bulletsText = description.bullets.map { "• \($0)" }.joined(separator: "\n")
-        let hashtagsText = description.hashtags.joined(separator: " ")
+        // СООБЩЕНИЕ 1: Заголовок + Описание
+        let message1 = """
+        ✅ *Готово!*
         
-        let resultText = """
-        ✅ *Готово!* Вот твоё описание:
-        
-        📝 *Заголовок:*
+        📝 *ЗАГОЛОВОК:*
         \(description.title)
         
-        📄 *Описание:*
+        📄 *ОПИСАНИЕ:*
         \(description.description)
+        """
         
-        🎯 *Ключевые выгоды:*
+        try await sendMessage(chatId: chatId, text: message1)
+        
+        // Небольшая задержка для читаемости
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 сек
+        
+        // СООБЩЕНИЕ 2: Bullets
+        let bulletsText = description.bullets.map { "• \($0)" }.joined(separator: "\n")
+        
+        let message2 = """
+        🎯 *КЛЮЧЕВЫЕ ВЫГОДЫ:*
+        
         \(bulletsText)
+        """
         
-        🏷 *Хештеги:*
+        try await sendMessage(chatId: chatId, text: message2)
+        
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // СООБЩЕНИЕ 3: Хештеги + кнопки
+        let hashtagsText = description.hashtags.joined(separator: " ")
+        
+        let message3 = """
+        🏷 *ХЕШТЕГИ:*
         \(hashtagsText)
         
         ━━━━━━━━━━━━━━━━━━━
@@ -540,7 +571,7 @@ final class TelegramBotService: @unchecked Sendable {
         
         let keyboard = TelegramReplyMarkup(inlineKeyboard: buttons)
         
-        try await sendMessage(chatId: chatId, text: resultText, replyMarkup: keyboard)
+        try await sendMessage(chatId: chatId, text: message3, replyMarkup: keyboard)
     }
     
     // MARK: - Photo Description Generation
@@ -875,12 +906,13 @@ final class TelegramBotService: @unchecked Sendable {
     
     // MARK: - Telegram API
     
+    @discardableResult
     func sendMessage(
         chatId: Int64,
         text: String,
         parseMode: String = "Markdown",
         replyMarkup: TelegramReplyMarkup? = nil
-    ) async throws {
+    ) async throws -> Int64? {
         let uri = URI(string: "\(baseURL)/sendMessage")
         
         let response = try await app.client.post(uri) { req in
@@ -894,6 +926,57 @@ final class TelegramBotService: @unchecked Sendable {
         
         guard response.status == HTTPResponseStatus.ok else {
             throw BotError.telegramAPIError(response.status)
+        }
+        
+        // Извлекаем message_id из ответа
+        struct SendMessageResponse: Content {
+            let ok: Bool
+            let result: MessageResult
+            
+            struct MessageResult: Content {
+                let messageId: Int64
+                
+                enum CodingKeys: String, CodingKey {
+                    case messageId = "message_id"
+                }
+            }
+        }
+        
+        let sendResponse = try? response.content.decode(SendMessageResponse.self)
+        return sendResponse?.result.messageId
+    }
+    
+    func editMessage(
+        chatId: Int64,
+        messageId: Int64?,
+        text: String,
+        parseMode: String = "Markdown"
+    ) async throws {
+        guard let messageId = messageId else { return }
+        
+        struct EditMessageText: Content {
+            let chatId: Int64
+            let messageId: Int64
+            let text: String
+            let parseMode: String?
+            
+            enum CodingKeys: String, CodingKey {
+                case chatId = "chat_id"
+                case messageId = "message_id"
+                case text
+                case parseMode = "parse_mode"
+            }
+        }
+        
+        let uri = URI(string: "\(baseURL)/editMessageText")
+        
+        _ = try await app.client.post(uri) { req in
+            try req.content.encode(EditMessageText(
+                chatId: chatId,
+                messageId: messageId,
+                text: text,
+                parseMode: parseMode
+            ))
         }
     }
     
