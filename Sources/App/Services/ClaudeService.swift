@@ -98,7 +98,7 @@ final class ClaudeService: @unchecked Sendable {
         let uri = URI(string: "\(baseURL)/messages")
         
         let request = ClaudeRequest(
-            model: "claude-3-5-sonnet-20241022",
+            model: "claude-sonnet-4-5-20250929",
             maxTokens: 2000,
             messages: [
                 ClaudeRequest.Message(role: "user", content: prompt)
@@ -192,7 +192,7 @@ final class ClaudeService: @unchecked Sendable {
         }
         
         let request = VisionRequest(
-            model: "claude-3-5-sonnet-20241022",
+            model: "claude-sonnet-4-5-20250929",
             maxTokens: 2000,
             messages: [
                 VisionMessage(
