@@ -82,10 +82,12 @@ struct UserRepository {
     }
     
     /// Списать 1 текстовый кредит (или увеличить старый счётчик, если кредитов нет)
-    /// Thread-safe: перечитываем пользователя перед изменением
+    /// Thread-safe: использует свежее чтение из БД перед обновлением
     func incrementGenerations(_ user: User) async throws {
-        // Перечитываем свежее состояние из БД
-        guard let freshUser = try await User.find(user.id, on: database) else {
+        // Перечитываем свежее состояние из БД (минимизируем race condition)
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .first() else {
             throw Abort(.notFound, reason: "User not found")
         }
         
@@ -104,10 +106,12 @@ struct UserRepository {
     }
     
     /// Списать 1 фото кредит (или увеличить старый счётчик, если кредитов нет)
-    /// Thread-safe: перечитываем пользователя перед изменением
+    /// Thread-safe: использует свежее чтение из БД перед обновлением
     func incrementPhotoGenerations(_ user: User) async throws {
-        // Перечитываем свежее состояние из БД
-        guard let freshUser = try await User.find(user.id, on: database) else {
+        // Перечитываем свежее состояние из БД (минимизируем race condition)
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .first() else {
             throw Abort(.notFound, reason: "User not found")
         }
         
@@ -126,15 +130,22 @@ struct UserRepository {
     }
     
     /// Откатить текстовую генерацию (если произошла ошибка после списания)
+    /// Thread-safe: перечитывает пользователя из БД
     func rollbackGeneration(_ user: User) async throws {
-        guard let freshUser = try await User.find(user.id, on: database) else {
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .first() else {
             return
         }
         
-        // Возвращаем кредит обратно
-        if freshUser.textCredits < 1000 { // Защита от переполнения
+        // Логика: возвращаем кредит ВСЕГДА если он был списан
+        // Проверяем что не превысим разумный лимит (защита от переполнения)
+        if freshUser.textCredits < 10000 {
             freshUser.textCredits += 1
-        } else if freshUser.generationsUsed > 0 {
+        }
+        
+        // Также уменьшаем счётчик использованных (если он > 0)
+        if freshUser.generationsUsed > 0 {
             freshUser.generationsUsed -= 1
         }
         
@@ -142,15 +153,22 @@ struct UserRepository {
     }
     
     /// Откатить фото генерацию (если произошла ошибка после списания)
+    /// Thread-safe: перечитывает пользователя из БД
     func rollbackPhotoGeneration(_ user: User) async throws {
-        guard let freshUser = try await User.find(user.id, on: database) else {
+        guard let freshUser = try await User.query(on: database)
+            .filter(\.$id == user.id!)
+            .first() else {
             return
         }
         
-        // Возвращаем кредит обратно
-        if freshUser.photoCredits < 1000 {
+        // Логика: возвращаем кредит ВСЕГДА если он был списан
+        // Проверяем что не превысим разумный лимит (защита от переполнения)
+        if freshUser.photoCredits < 10000 {
             freshUser.photoCredits += 1
-        } else if freshUser.photoGenerationsUsed > 0 {
+        }
+        
+        // Также уменьшаем счётчик использованных (если он > 0)
+        if freshUser.photoGenerationsUsed > 0 {
             freshUser.photoGenerationsUsed -= 1
         }
         

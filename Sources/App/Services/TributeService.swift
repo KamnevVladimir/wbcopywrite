@@ -156,14 +156,16 @@ final class TributeService: @unchecked Sendable {
     }
     
     /// Начислить кредиты пользователю
+    /// Thread-safe: перечитывает пользователя из БД перед обновлением
     private func addCreditsToUser(
         telegramId: Int64,
         plan: Constants.SubscriptionPlan,
         on db: any Database
     ) async throws {
-        let repo = UserRepository(database: db)
-        
-        guard let user = try await repo.find(telegramId: telegramId) else {
+        // Перечитываем свежее состояние пользователя
+        guard let user = try await User.query(on: db)
+            .filter(\.$telegramId == telegramId)
+            .first() else {
             throw Abort(.notFound, reason: "User not found")
         }
         

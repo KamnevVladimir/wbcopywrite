@@ -51,7 +51,7 @@ enum Constants {
         
         var photoGenerationsLimit: Int {
             switch self {
-            case .free: return 1
+            case .free: return 1  // Бонус: 1 фото чтобы попробовать
             case .small: return 3
             case .medium: return 5
             case .large: return 10
@@ -73,13 +73,13 @@ enum Constants {
             case .free:
                 return "4 описания (3 текста + 1 бонус фото)"
             case .small:
-                return "20 описаний (20 текстов + 3 бонус фото)"
+                return "23 описания (20 текстов + 3 фото)"
             case .medium:
-                return "50 описаний (50 текстов + 5 бонус фото)"
+                return "55 описаний (50 текстов + 5 фото)"
             case .large:
-                return "100 описаний (100 текстов + 10 бонус фото)"
+                return "110 описаний (100 текстов + 10 фото)"
             case .max:
-                return "200 описаний (200 текстов + 20 бонус фото)"
+                return "220 описаний (200 текстов + 20 фото)"
             }
         }
         
