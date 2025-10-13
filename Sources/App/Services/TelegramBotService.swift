@@ -204,16 +204,31 @@ final class TelegramBotService: @unchecked Sendable {
         let plan = try await repo.getCurrentPlan(user)
         let remainingText = try await repo.getRemainingGenerations(user)
         let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
+        let hasTextCredits = user.textCredits > 0
+        let hasPhotoCredits = user.photoCredits > 0
         
+        let textLine: String = {
+            if hasTextCredits { return "• Текстовые кредиты: \(remainingText)" }
+            else { return "• Текстовых: \(remainingText) из \(plan.textGenerationsLimit)" }
+        }()
+        let photoLine: String = {
+            if hasPhotoCredits { return "• Фото кредиты: \(remainingPhoto)" }
+            else { return "• С фото: \(remainingPhoto) из \(plan.photoGenerationsLimit)" }
+        }()
+        let totalLine: String = {
+            if hasTextCredits || hasPhotoCredits { return "• Итого кредитов: \(remainingText + remainingPhoto)" }
+            else { return "• Всего: \(remainingText + remainingPhoto) из \(plan.totalGenerationsLimit)" }
+        }()
+
         let balanceText = """
         💰 *Твой баланс*
         
         📦 *Текущий пакет:* \(plan.emoji) \(plan.name)
         
         📊 *Осталось генераций:*
-        • Текстовых: \(remainingText) из \(plan.textGenerationsLimit)
-        • С фото: \(remainingPhoto) из \(plan.photoGenerationsLimit)
-        • Всего: \(remainingText + remainingPhoto) из \(plan.totalGenerationsLimit)
+        \(textLine)
+        \(photoLine)
+        \(totalLine)
         
         💡 *Цена за генерацию:* \(plan.pricePerGeneration) ₽
         """
@@ -1187,10 +1202,26 @@ final class TelegramBotService: @unchecked Sendable {
         let bulletsText = bullets.map { "• \($0)" }.joined(separator: "\n")
         let hashtagsText = hashtags.joined(separator: " ")
         
+        let formattedDate: String = {
+            if let date = generation.createdAt {
+                if #available(macOS 10.12, *) {
+                    let iso = ISO8601DateFormatter()
+                    return iso.string(from: date)
+                } else {
+                    let df = DateFormatter()
+                    df.locale = Locale(identifier: "en_US_POSIX")
+                    df.timeZone = TimeZone(secondsFromGMT: 0)
+                    df.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+                    return df.string(from: date)
+                }
+            }
+            return ""
+        }()
+
         let fileContent = """
         📝 ОПИСАНИЕ ТОВАРА
         Создано: КарточкаПРО AI Bot
-        Дата: \(generation.createdAt?.formatted() ?? "")
+        Дата: \(formattedDate)
         
         ════════════════════════════════════
         
@@ -1256,6 +1287,14 @@ final class TelegramBotService: @unchecked Sendable {
         ]])
         
         try await sendMessage(chatId: chatId, text: text, replyMarkup: keyboard)
+    }
+
+    // Пополнение кредитов после успешной оплаты (будет вызываться из вебхука)
+    private func addCredits(_ plan: Constants.SubscriptionPlan, to user: User) async throws {
+        // Прибавляем кредиты пакета к текущему балансу
+        user.textCredits += plan.textGenerationsLimit
+        user.photoCredits += plan.photoGenerationsLimit
+        try await user.update(on: app.db)
     }
     
     // MARK: - Copy Parts Feature (FR-8)

@@ -81,15 +81,23 @@ struct UserRepository {
         try await user.update(on: database)
     }
     
-    /// Увеличить счетчик генераций
+    /// Списать 1 текстовый кредит (или увеличить старый счётчик, если кредитов нет)
     func incrementGenerations(_ user: User) async throws {
-        user.generationsUsed += 1
+        if user.textCredits > 0 {
+            user.textCredits -= 1
+        } else {
+            user.generationsUsed += 1
+        }
         try await user.update(on: database)
     }
     
-    /// Увеличить счетчик фото генераций
+    /// Списать 1 фото кредит (или увеличить старый счётчик, если кредитов нет)
     func incrementPhotoGenerations(_ user: User) async throws {
-        user.photoGenerationsUsed += 1
+        if user.photoCredits > 0 {
+            user.photoCredits -= 1
+        } else {
+            user.photoGenerationsUsed += 1
+        }
         try await user.update(on: database)
     }
     
@@ -102,12 +110,16 @@ struct UserRepository {
     
     /// Получить количество оставшихся текстовых генераций
     func getRemainingGenerations(_ user: User) async throws -> Int {
-        try await user.remainingGenerations(on: database)
+        // Новая логика: кредиты имеют приоритет
+        if user.textCredits > 0 { return user.textCredits }
+        return try await user.remainingGenerations(on: database)
     }
     
     /// Получить количество оставшихся фото генераций
     func getRemainingPhotoGenerations(_ user: User) async throws -> Int {
-        try await user.remainingPhotoGenerations(on: database)
+        // Новая логика: кредиты имеют приоритет
+        if user.photoCredits > 0 { return user.photoCredits }
+        return try await user.remainingPhotoGenerations(on: database)
     }
     
     /// Проверить есть ли лимит на текстовые генерации

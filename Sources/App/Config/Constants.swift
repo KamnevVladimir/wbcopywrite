@@ -42,10 +42,10 @@ enum Constants {
         var textGenerationsLimit: Int {
             switch self {
             case .free: return 3
-            case .small: return 17
-            case .medium: return 45
-            case .large: return 90
-            case .max: return 180
+            case .small: return 20
+            case .medium: return 50
+            case .large: return 100
+            case .max: return 200
             }
         }
         
@@ -71,15 +71,15 @@ enum Constants {
         var description: String {
             switch self {
             case .free:
-                return "4 описания (3 текста + 1 фото)"
+                return "4 описания (3 текста + 1 бонус фото)"
             case .small:
-                return "20 описаний (17 текстов + 3 фото)"
+                return "20 описаний (20 текстов + 3 бонус фото)"
             case .medium:
-                return "50 описаний (45 текстов + 5 фото)"
+                return "50 описаний (50 текстов + 5 бонус фото)"
             case .large:
-                return "100 описаний (90 текстов + 10 фото)"
+                return "100 описаний (100 текстов + 10 бонус фото)"
             case .max:
-                return "200 описаний (180 текстов + 20 фото)"
+                return "200 описаний (200 текстов + 20 бонус фото)"
             }
         }
         
@@ -107,13 +107,13 @@ enum Constants {
             case .free:
                 return "" // Free не требует оплаты
             case .small:
-                return "83183" // Small 299₽ (status: new)
+                return "83185" // Small 299₽ (status: new, updated 13.10.2025)
             case .medium:
-                return "83179" // Medium 599₽ (status: new)
+                return "83187" // Medium 599₽ (status: new, updated 13.10.2025)
             case .large:
-                return "83180" // Large 999₽ (status: new)
+                return "83188" // Large 999₽ (status: new, updated 13.10.2025)
             case .max:
-                return "83182" // Max 1399₽ (status: new)
+                return "83189" // Max 1399₽ (status: new, updated 13.10.2025)
             }
         }
 
@@ -123,13 +123,13 @@ enum Constants {
             case .free:
                 return ""
             case .small:
-                return "https://web.tribute.tg/p/lDF"
+                return "https://web.tribute.tg/p/lDH" // Updated 13.10.2025
             case .medium:
-                return "https://web.tribute.tg/p/lDB"
+                return "https://web.tribute.tg/p/lDJ" // Updated 13.10.2025
             case .large:
-                return "https://web.tribute.tg/p/lDC"
+                return "https://web.tribute.tg/p/lDK" // Updated 13.10.2025
             case .max:
-                return "https://web.tribute.tg/p/lDE"
+                return "https://web.tribute.tg/p/lDL" // Updated 13.10.2025
             }
         }
     }

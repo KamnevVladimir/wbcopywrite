@@ -22,11 +22,19 @@ final class User: Model, Content, @unchecked Sendable {
     @OptionalField(key: "selected_category")
     var selectedCategory: String?
     
+    // Deprecated counters (kept for backward compatibility during migration)
     @Field(key: "generations_used")
     var generationsUsed: Int
     
     @Field(key: "photo_generations_used")
     var photoGenerationsUsed: Int
+
+    // New credit-based fields
+    @Field(key: "text_credits")
+    var textCredits: Int
+    
+    @Field(key: "photo_credits")
+    var photoCredits: Int
     
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
@@ -57,6 +65,8 @@ final class User: Model, Content, @unchecked Sendable {
         self.lastName = lastName
         self.generationsUsed = 0
         self.photoGenerationsUsed = 0
+        self.textCredits = 0
+        self.photoCredits = 0
     }
 }
 
@@ -81,58 +91,18 @@ extension User {
     }
     
     func remainingGenerations(on db: Database) async throws -> Int {
+        // Кредитная модель: считаем от общего лимита пакета минус использованные
         let plan = try await currentPlan(on: db)
         let limit = plan.textGenerationsLimit
-        
-        // Для free - считаем общее количество
-        if plan == .free {
-            return max(0, limit - generationsUsed)
-        }
-        
-        // Для платных - считаем за текущий месяц
-        guard let subscription = try await self.$subscription.get(on: db) else {
-            return 0
-        }
-        
-        let startOfMonth = subscription.currentPeriodStart
-        let generationsThisMonth = try await Generation.query(on: db)
-            .filter(\.$user.$id == self.id!)
-            .filter(\.$createdAt >= startOfMonth)
-            .count()
-        
-        return max(0, limit - generationsThisMonth)
+        return max(0, limit - generationsUsed)
     }
     
     func remainingPhotoGenerations(on db: Database) async throws -> Int {
+        // Кредитная модель: считаем от общего лимита пакета минус использованные
         let plan = try await currentPlan(on: db)
         let limit = plan.photoGenerationsLimit
-        
-        // Безлимит
-        if limit == -1 {
-            return 999
-        }
-        
-        // Для free - считаем общее количество
-        if plan == .free {
-            return max(0, limit - photoGenerationsUsed)
-        }
-        
-        // Для платных - считаем за текущий месяц
-        guard let subscription = try await self.$subscription.get(on: db) else {
-            return 0
-        }
-        
-        let startOfMonth = subscription.currentPeriodStart
-        
-        // Считаем фото генерации (можно добавить флаг в Generation модель)
-        // Пока упрощённо - считаем по названию
-        let photoGenerationsThisMonth = try await Generation.query(on: db)
-            .filter(\.$user.$id == self.id!)
-            .filter(\.$createdAt >= startOfMonth)
-            .filter(\.$productName == "Генерация по фото")
-            .count()
-        
-        return max(0, limit - photoGenerationsThisMonth)
+        if limit == -1 { return 999 }
+        return max(0, limit - photoGenerationsUsed)
     }
 }
 
