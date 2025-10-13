@@ -238,14 +238,29 @@ final class TelegramBotService: @unchecked Sendable {
         let user = try await getOrCreateUser(from: callback.from, chatId: callback.message?.chat.id ?? callback.from.id)
         let chatId = callback.message?.chat.id ?? callback.from.id
         
-        // Обработка callback data
-        if data.starts(with: "category_") {
-            let category = String(data.dropFirst("category_".count))
-            try await handleCategorySelected(category: category, user: user, chatId: chatId)
-        } else if data == "new_generation" {
+        // Парсинг callback data
+        guard let callbackData = CallbackData(rawValue: data) else {
+            app.logger.warning("⚠️ Unknown callback data: \(data)")
+            try await answerCallback(callbackId: callback.id, text: "Неизвестное действие")
+            return
+        }
+        
+        // Обработка через switch
+        switch callbackData {
+        case .category(let categoryRaw):
+            try await handleCategorySelected(category: categoryRaw, user: user, chatId: chatId)
+            
+        case .newGeneration:
             try await handleGenerateCommand(user: user, chatId: chatId)
-        } else if data == "my_balance" {
+            
+        case .myBalance:
             try await handleBalanceCommand(user: user, chatId: chatId)
+            
+        case .exportLast:
+            try await handleExportLast(user: user, chatId: chatId)
+            
+        case .buyPlan(let plan):
+            try await handleBuyPlan(plan: plan, user: user, chatId: chatId)
         }
         
         // Подтвердить callback
@@ -396,6 +411,9 @@ final class TelegramBotService: @unchecked Sendable {
             [
                 TelegramInlineKeyboardButton(text: "🔄 Новая генерация", callbackData: "new_generation"),
                 TelegramInlineKeyboardButton(text: "💰 Мой баланс", callbackData: "my_balance")
+            ],
+            [
+                TelegramInlineKeyboardButton(text: "📄 Экспорт в файл", callbackData: "export_last")
             ]
         ])
         
@@ -548,6 +566,97 @@ final class TelegramBotService: @unchecked Sendable {
         return Data(buffer: buffer)
     }
     
+    // MARK: - Export & Buy Handlers
+    
+    private func handleExportLast(user: User, chatId: Int64) async throws {
+        // Получить последнюю генерацию
+        let lastGeneration = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .first()
+        
+        guard let generation = lastGeneration,
+              let title = generation.resultTitle,
+              let description = generation.resultDescription,
+              let bullets = generation.resultBullets,
+              let hashtags = generation.resultHashtags else {
+            try await sendMessage(
+                chatId: chatId,
+                text: "❌ Нет сохранённых описаний для экспорта. Сначала сгенерируй описание!"
+            )
+            return
+        }
+        
+        // Формируем текстовый файл
+        let bulletsText = bullets.map { "• \($0)" }.joined(separator: "\n")
+        let hashtagsText = hashtags.joined(separator: " ")
+        
+        let fileContent = """
+        📝 ОПИСАНИЕ ТОВАРА
+        Создано: КарточкаПРО AI Bot
+        Дата: \(generation.createdAt?.formatted() ?? "")
+        
+        ════════════════════════════════════
+        
+        ЗАГОЛОВОК:
+        \(title)
+        
+        ════════════════════════════════════
+        
+        ОПИСАНИЕ:
+        \(description)
+        
+        ════════════════════════════════════
+        
+        КЛЮЧЕВЫЕ ВЫГОДЫ:
+        \(bulletsText)
+        
+        ════════════════════════════════════
+        
+        ХЕШТЕГИ:
+        \(hashtagsText)
+        
+        ════════════════════════════════════
+        
+        Категория: \(generation.category)
+        Токены использовано: \(generation.tokensUsed)
+        Время обработки: \(generation.processingTimeMs)ms
+        
+        Создано через @kartochka_pro_bot
+        """
+        
+        // Отправляем как документ
+        try await sendDocument(
+            chatId: chatId,
+            content: fileContent,
+            filename: "opisanie_\(generation.id?.uuidString.prefix(8) ?? "export").txt",
+            caption: "📄 Твоё описание в удобном формате!"
+        )
+        
+        app.logger.info("✅ Exported generation \(generation.id?.uuidString ?? "unknown") for user \(user.telegramId)")
+    }
+    
+    private func handleBuyPlan(plan: String, user: User, chatId: Int64) async throws {
+        // Пока Tribute не интегрирован - показываем заглушку
+        let buyText = """
+        💎 *Покупка подписки \(plan.capitalized)*
+        
+        ⚠️ Интеграция оплаты пока в разработке!
+        
+        Скоро здесь будет:
+        • Автоматическая оплата через Tribute
+        • Мгновенная активация подписки
+        • Авторенев каждый месяц
+        
+        А пока пользуйся Free планом (3 описания).
+        
+        Хочешь больше описаний прямо сейчас?
+        Напиши в поддержку: @vskamnev
+        """
+        
+        try await sendMessage(chatId: chatId, text: buyText)
+    }
+    
     // MARK: - Helpers
     
     private func getOrCreateUser(from telegramUser: TelegramUser, chatId: Int64) async throws -> User {
@@ -628,12 +737,97 @@ final class TelegramBotService: @unchecked Sendable {
         }
     }
     
+    private func sendDocument(
+        chatId: Int64,
+        content: String,
+        filename: String,
+        caption: String? = nil
+    ) async throws {
+        // Создаём временный файл
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent(filename)
+        
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        
+        defer {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        
+        // Отправляем через Telegram API
+        let uri = URI(string: "\(baseURL)/sendDocument")
+        
+        let response = try await app.client.post(uri) { req in
+            let boundary = UUID().uuidString
+            req.headers.contentType = HTTPMediaType(type: "multipart", subType: "form-data", parameters: ["boundary": boundary])
+            
+            var body = ByteBuffer()
+            
+            // chat_id
+            body.writeString("--\(boundary)\r\n")
+            body.writeString("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n")
+            body.writeString("\(chatId)\r\n")
+            
+            // document (file)
+            body.writeString("--\(boundary)\r\n")
+            body.writeString("Content-Disposition: form-data; name=\"document\"; filename=\"\(filename)\"\r\n")
+            body.writeString("Content-Type: text/plain\r\n\r\n")
+            
+            let fileData = try Data(contentsOf: fileURL)
+            body.writeData(fileData)
+            body.writeString("\r\n")
+            
+            // caption
+            if let caption = caption {
+                body.writeString("--\(boundary)\r\n")
+                body.writeString("Content-Disposition: form-data; name=\"caption\"\r\n\r\n")
+                body.writeString(caption)
+                body.writeString("\r\n")
+            }
+            
+            body.writeString("--\(boundary)--\r\n")
+            
+            req.body = body
+        }
+        
+        guard response.status == HTTPResponseStatus.ok else {
+            throw BotError.telegramAPIError(response.status)
+        }
+    }
+    
     // MARK: - Errors
     
     enum BotError: Error {
         case telegramAPIError(HTTPResponseStatus)
         case userNotFound
         case limitExceeded
+    }
+    
+    // MARK: - Callback Data
+    
+    enum CallbackData {
+        case category(String)
+        case newGeneration
+        case myBalance
+        case exportLast
+        case buyPlan(String)
+        
+        init?(rawValue: String) {
+            if rawValue.starts(with: "category_") {
+                let category = String(rawValue.dropFirst("category_".count))
+                self = .category(category)
+            } else if rawValue == "new_generation" {
+                self = .newGeneration
+            } else if rawValue == "my_balance" {
+                self = .myBalance
+            } else if rawValue == "export_last" {
+                self = .exportLast
+            } else if rawValue.starts(with: "buy_") {
+                let plan = String(rawValue.dropFirst("buy_".count))
+                self = .buyPlan(plan)
+            } else {
+                return nil
+            }
+        }
     }
 }
 
