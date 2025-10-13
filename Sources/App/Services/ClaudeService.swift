@@ -97,7 +97,7 @@ final class ClaudeService: @unchecked Sendable {
             model: "claude-3-5-sonnet-20241022",
             maxTokens: 2000,
             messages: [
-                ClaudeMessage(role: "user", content: prompt)
+                ClaudeRequest.Message(role: "user", content: prompt)
             ]
         )
         
@@ -109,7 +109,7 @@ final class ClaudeService: @unchecked Sendable {
             try req.content.encode(request)
         }
         
-        guard response.status == .ok else {
+        guard response.status == HTTPStatus.ok else {
             app.logger.error("❌ Claude API error: \(response.status)")
             throw ClaudeError.apiError(response.status)
         }
@@ -194,7 +194,7 @@ final class ClaudeService: @unchecked Sendable {
             try req.content.encode(request)
         }
         
-        guard response.status == .ok else {
+        guard response.status == HTTPStatus.ok else {
             app.logger.error("❌ Claude Vision API error: \(response.status)")
             throw ClaudeError.apiError(response.status)
         }
