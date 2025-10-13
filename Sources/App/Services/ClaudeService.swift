@@ -97,9 +97,34 @@ final class ClaudeService: @unchecked Sendable {
     private func callClaudeAPI(prompt: String) async throws -> ClaudeResponse {
         let uri = URI(string: "\(baseURL)/messages")
         
+        // Разделяем на system (кэшируется) и user (каждый раз новый)
+        let systemPrompt = """
+        Ты профессиональный копирайтер для маркетплейсов Wildberries и Ozon с 10+ лет опыта.
+        
+        ТВОЯ ЗАДАЧА:
+        Создавать продающие SEO-оптимизированные описания товаров.
+        
+        ПРИНЦИПЫ:
+        1. Цепляющий hook в первых 2 предложениях
+        2. Эмоциональные триггеры и конкретные выгоды
+        3. SEO-keywords естественно вплетены
+        4. Структура: описание → преимущества → CTA
+        
+        ФОРМАТ ОТВЕТА (строго JSON):
+        {
+          "title": "Заголовок товара (до 100 символов)",
+          "description": "Описание 200-500 символов",
+          "bullets": ["Выгода 1", "Выгода 2", "Выгода 3", "Выгода 4", "Выгода 5"],
+          "hashtags": ["#хештег1", "#хештег2", "#хештег3", "#хештег4", "#хештег5"]
+        }
+        
+        ВАЖНО: Отвечай ТОЛЬКО валидным JSON, без markdown блоков!
+        """
+        
         let request = ClaudeRequest(
             model: "claude-sonnet-4-5-20250929",
             maxTokens: 2000,
+            system: systemPrompt,
             messages: [
                 ClaudeRequest.Message(role: "user", content: prompt)
             ]
@@ -258,41 +283,19 @@ final class ClaudeService: @unchecked Sendable {
     // MARK: - Prompt Building
     
     private func buildPrompt(productInfo: String, category: Constants.ProductCategory) -> String {
-        let basePrompt = """
-        Ты профессиональный копирайтер для маркетплейсов Wildberries и Ozon.
-        Твоя задача — создать продающее описание товара на основе информации от пользователя.
-        
+        // Короткий промпт - основные инструкции в system (кэшируются)
+        let userPrompt = """
         КАТЕГОРИЯ: \(category.name)
         
         ИНФОРМАЦИЯ О ТОВАРЕ:
         \(productInfo)
         
-        ТРЕБОВАНИЯ:
-        1. Заголовок (до 100 символов): цепляющий, с ключевыми словами
-        2. Описание (200-500 символов): SEO-оптимизированное, продающее
-        3. Bullet-points (5 штук): конкретные выгоды для покупателя
-        4. Хештеги (5-7 штук): релевантные для поиска
-        
         \(getCategorySpecificGuidelines(category))
         
-        ФОРМАТ ОТВЕТА (строго JSON):
-        {
-          "title": "Заголовок товара",
-          "description": "Подробное описание товара...",
-          "bullets": [
-            "Первая выгода",
-            "Вторая выгода",
-            "Третья выгода",
-            "Четвертая выгода",
-            "Пятая выгода"
-          ],
-          "hashtags": ["#хештег1", "#хештег2", "#хештег3", "#хештег4", "#хештег5"]
-        }
-        
-        ВАЖНО: Отвечай ТОЛЬКО валидным JSON, без дополнительного текста!
+        Создай описание в JSON формате.
         """
         
-        return basePrompt
+        return userPrompt
     }
     
     private func getCategorySpecificGuidelines(_ category: Constants.ProductCategory) -> String {
