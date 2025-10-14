@@ -243,7 +243,16 @@ final class GenerationService: @unchecked Sendable {
 ⚡️ Осталось: \(remainingText) текстов + \(remainingPhoto) фото
 """
         
-        try await api.sendMessage(chatId: chatId, text: result)
+        // Кнопки экспорта
+        let exportButtons = [
+            TelegramInlineKeyboardButton(text: "📄 TXT", callbackData: "export_txt"),
+            TelegramInlineKeyboardButton(text: "📊 CSV", callbackData: "export_csv"),
+            TelegramInlineKeyboardButton(text: "📗 XLSX", callbackData: "export_xlsx")
+        ]
+        
+        let keyboard = TelegramReplyMarkup(inlineKeyboard: [exportButtons])
+        
+        try await api.sendMessage(chatId: chatId, text: result, replyMarkup: keyboard)
     }
     
     // MARK: - Errors
