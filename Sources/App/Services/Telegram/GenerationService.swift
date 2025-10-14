@@ -221,9 +221,22 @@ final class GenerationService: @unchecked Sendable {
         let hashtagsText = description.hashtags.joined(separator: " ")
         let combinedBody = "\(description.description)\n\n🎯 КЛЮЧЕВЫЕ ВЫГОДЫ:\n\(bulletsText)\n\n🏷 ХЕШТЕГИ:\n\(hashtagsText)"
         let result = """
-        ✅ Готово!\n\n📝 ЗАГОЛОВОК:\n```\n\(description.title)\n```\n\n📄 ОПИСАНИЕ:\n```\n\(combinedBody)\n```\n\n━━━━━━━━━━━━━━━━━━━━\n⚡️ Осталось: \(remainingText) текстов + \(remainingPhoto) фото
+        ✅ Готово!
+
+📝 ЗАГОЛОВОК:
+```
+\(description.title)
+```
+
+📄 ОПИСАНИЕ:
+```
+\(combinedBody)
+```
+
+━━━━━━━━━━━━━━━━━━━━
+⚡️ Осталось: \(remainingText) текстов + \(remainingPhoto) фото
         """
-        try await api.sendMessage(chatId: chatId, text: result, replyMarkup: nil, parseMode: "MarkdownV2")
+        try await api.sendMessage(chatId: chatId, text: result)
     }
     
     // MARK: - Errors
