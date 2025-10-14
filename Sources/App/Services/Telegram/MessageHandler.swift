@@ -197,20 +197,14 @@ final class MessageHandler: @unchecked Sendable {
                 remainingPhoto: remainingPhoto,
                 nudge: nudge
             )
-            
-            try await api.sendMessage(chatId: chatId, text: msg1)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            
-            try await api.sendMessage(chatId: chatId, text: msg2)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            
+            // Отправляем всё одной цитатой, чтобы удобно копировать
+            let quotedAll = "> " + [msg1, msg2, msg3].joined(separator: "\n\n").replacingOccurrences(of: "\n", with: "\n> ")
             let keyboard = KeyboardBuilder.createPostGenerationKeyboard(
                 category: category,
                 remainingText: remainingText,
                 remainingPhoto: remainingPhoto
             )
-            
-            try await api.sendMessage(chatId: chatId, text: msg3, replyMarkup: keyboard)
+            try await api.sendMessage(chatId: chatId, text: quotedAll, replyMarkup: keyboard, parseMode: "Markdown")
             
         } catch {
             log.generationError(error)
