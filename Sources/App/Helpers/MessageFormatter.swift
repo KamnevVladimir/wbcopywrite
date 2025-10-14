@@ -6,15 +6,12 @@ struct MessageFormatter {
     // MARK: - Welcome Messages
     
     static func welcome(user: User, plan: Constants.SubscriptionPlan, remainingText: Int, remainingPhoto: Int) -> String {
-        let pricePerItem = String(format: "%.1f", Double(truncating: plan.pricePerGeneration as NSNumber))
-        
         return """
         👋 *Привет, \(user.displayName)!*
         
         Я *КарточкаПРО* — AI-копирайтер для WB/Ozon
         
-        📊 *Твой пакет:* \(plan.emoji) \(plan.name)
-        Осталось: \(remainingText) текстов + \(remainingPhoto) фото
+        📊 *Осталось:* \(remainingText) текстов + \(remainingPhoto) фото
         
         💡 *Что я создаю:*
         
@@ -31,8 +28,6 @@ struct MessageFormatter {
         ✅ 5 ключевых выгод (bullets)
         ✅ 7 хештегов для поиска
         ✅ Анализ фото товара 📷
-        
-        💰 *Экономия:* Копирайтер 300₽ → Мы \(pricePerItem)₽!
         
         Подсказка:
         
