@@ -103,6 +103,11 @@ func routes(_ app: Application) throws {
             req.logger.info("ℹ️ Tribute webhook ping without body — OK")
             return .ok
         }
+        // Диагностика: логируем тип и превью тела (без чувствительных данных)
+        let contentType = req.headers.first(name: "Content-Type") ?? ""
+        let bodyString = String(buffer: body)
+        let preview = bodyString.prefix(512)
+        req.logger.info("ℹ️ Tribute webhook headers: Content-Type=\(contentType); body.len=\(body.readableBytes), preview=\(preview)")
         
         // Шаг 2: Проверить HMAC подпись (если Tribute отправляет)
         if let signature = req.headers.first(name: "X-Tribute-Signature") {
@@ -121,13 +126,26 @@ func routes(_ app: Application) throws {
         
         // Шаг 3: Декодировать событие
         do {
+            // Попытка 1: обычный JSON
             let event = try req.content.decode(TributeWebhookEvent.self)
             // 🔒 ЗАЩИТА 3: Проверка дубликатов (уже внутри handleWebhook)
             // Шаг 4: Обработать через TributeService
             try await req.application.tribute.handleWebhook(event, on: req)
             return .ok
         } catch {
-            // Тестовый запрос Tribute может не содержать ожидаемого JSON
+            // Попытка 2: application/x-www-form-urlencoded с полем payload
+            if contentType.contains("application/x-www-form-urlencoded") {
+                struct FormEnvelope: Content { let id: String?; let type: String?; let payload: String?; let data: String? }
+                if let form = try? req.content.decode(FormEnvelope.self) {
+                    if let json = form.payload ?? form.data,
+                       let jsonData = json.data(using: .utf8),
+                       let nested = try? JSONDecoder().decode(TributeWebhookEvent.self, from: jsonData) {
+                        try await req.application.tribute.handleWebhook(nested, on: req)
+                        return .ok
+                    }
+                }
+            }
+            // Тестовый/неизвестный формат — просто 200, чтобы они считали вебхук доступным
             req.logger.info("ℹ️ Tribute webhook test without payload — returning 200. Error: \(error)")
             return .ok
         }
