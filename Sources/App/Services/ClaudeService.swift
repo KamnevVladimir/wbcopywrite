@@ -459,11 +459,22 @@ final class ClaudeService: @unchecked Sendable {
         let decoder = JSONDecoder()
         
         do {
+            // Попытка 1: Прямое декодирование
             return try decoder.decode(ParsedDescription.self, from: jsonData)
-        } catch {
-            app.logger.error("❌ JSON parsing error: \(error)")
-            app.logger.error("Content: \(content)")
-            throw ClaudeError.invalidJSON
+        } catch let directError {
+            // Попытка 2: Claude обернул в {"result": {...}}
+            do {
+                let wrapper = try decoder.decode(ParsedDescriptionWrapper.self, from: jsonData)
+                app.logger.debug("✅ Parsed wrapped JSON with 'result' key")
+                return wrapper.result
+            } catch {
+                app.logger.error("❌ JSON parsing error (both attempts failed)")
+                app.logger.error("Direct error: \(directError)")
+                app.logger.error("Wrapper error: \(error)")
+                app.logger.error("Content: \(content)")
+                app.logger.error("JSON string: \(jsonString)")
+                throw ClaudeError.invalidJSON
+            }
         }
     }
     
@@ -500,6 +511,11 @@ final class ClaudeService: @unchecked Sendable {
         let description: String
         let bullets: [String]
         let hashtags: [String]
+    }
+    
+    // Обертка для случая когда Claude возвращает {"result": {...}}
+    private struct ParsedDescriptionWrapper: Codable {
+        let result: ParsedDescription
     }
     
     // MARK: - Errors
