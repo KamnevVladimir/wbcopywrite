@@ -59,14 +59,15 @@ final class CommandHandler: @unchecked Sendable {
             remainingPhoto: remainingPhoto
         )
         
-        // Клавиатура: категории + последние + кнопка пакетов
+        // Клавиатура: категории + последние + кнопки пакетов и фидбека
         let categoryKeyboard = KeyboardBuilder.createCategoryKeyboard(recentCategories: user.recentCategories ?? [])
-        let subscribeButton = [[
-            TelegramInlineKeyboardButton(text: "💎 Тарифы и цены", callbackData: "view_packages")
-        ]]
+        let actionButtons = [
+            [TelegramInlineKeyboardButton(text: "💎 Тарифы и цены", callbackData: "view_packages")],
+            [TelegramInlineKeyboardButton(text: "💬 Оставить отзыв", callbackData: "start_feedback")]
+        ]
         
         let fullKeyboard = TelegramReplyMarkup(
-            inlineKeyboard: (categoryKeyboard.inlineKeyboard ?? []) + subscribeButton
+            inlineKeyboard: (categoryKeyboard.inlineKeyboard ?? []) + actionButtons
         )
         
         try await api.sendMessage(chatId: chatId, text: welcomeText, replyMarkup: fullKeyboard)

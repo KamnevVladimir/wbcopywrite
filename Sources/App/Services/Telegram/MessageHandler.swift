@@ -55,6 +55,9 @@ final class MessageHandler: @unchecked Sendable {
             } else if state == "awaiting_custom_category" {
                 try await handleCustomCategoryInput(text, user: user, chatId: chatId)
                 return
+            } else if state.starts(with: "awaiting_feedback_comment:") {
+                try await handleFeedbackComment(text, user: user, chatId: chatId)
+                return
             }
         }
         
@@ -245,6 +248,13 @@ final class MessageHandler: @unchecked Sendable {
             chatId: chatId,
             text: "📄 Массовая генерация из документа - в разработке"
         )
+    }
+    
+    // MARK: - Feedback Handler
+    
+    private func handleFeedbackComment(_ text: String, user: User, chatId: Int64) async throws {
+        let feedbackHandler = FeedbackHandler(app: app, api: api)
+        try await feedbackHandler.handleCommentInput(text, user: user, chatId: chatId)
     }
 }
 

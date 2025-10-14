@@ -80,6 +80,15 @@ final class CallbackHandler: @unchecked Sendable {
             
         case .backToMain:
             try await handleBackToMain(user: user, chatId: chatId)
+            
+        case .startFeedback:
+            try await handleStartFeedback(user: user, chatId: chatId)
+            
+        case .feedbackRate(let rating):
+            try await handleFeedbackRate(rating, user: user, chatId: chatId, messageId: Int(callback.message?.messageId ?? 0))
+            
+        case .feedbackSkip:
+            try await handleFeedbackSkip(user: user, chatId: chatId, messageId: Int(callback.message?.messageId ?? 0))
         }
         
         try await api.answerCallback(callbackId: callback.id)
@@ -445,6 +454,23 @@ final class CallbackHandler: @unchecked Sendable {
         let commandHandler = CommandHandler(app: app, api: api)
         try await commandHandler.handle("/start", user: user, chatId: chatId)
     }
+    
+    // MARK: - Feedback Handlers
+    
+    private func handleStartFeedback(user: User, chatId: Int64) async throws {
+        let feedbackHandler = FeedbackHandler(app: app, api: api)
+        try await feedbackHandler.startFeedbackFlow(user: user, chatId: chatId)
+    }
+    
+    private func handleFeedbackRate(_ rating: Int, user: User, chatId: Int64, messageId: Int) async throws {
+        let feedbackHandler = FeedbackHandler(app: app, api: api)
+        try await feedbackHandler.handleRatingSelection(rating, user: user, chatId: chatId, messageId: messageId)
+    }
+    
+    private func handleFeedbackSkip(user: User, chatId: Int64, messageId: Int) async throws {
+        let feedbackHandler = FeedbackHandler(app: app, api: api)
+        try await feedbackHandler.handleSkipComment(user: user, chatId: chatId, messageId: messageId)
+    }
 }
 
 // MARK: - Callback Data Enum
@@ -468,12 +494,26 @@ extension CallbackHandler {
         case improveResult(String)
         case viewHistory(Int, Int)
         case backToMain
+        case startFeedback
+        case feedbackRate(Int)
+        case feedbackSkip
         
         init?(rawValue: String) {
             if rawValue == "back_to_main" {
                 self = .backToMain
             } else if rawValue == "improve_last" {
                 self = .improveLast
+            } else if rawValue == "start_feedback" {
+                self = .startFeedback
+            } else if rawValue == "feedback_skip" {
+                self = .feedbackSkip
+            } else if rawValue.starts(with: "feedback_rate:") {
+                let ratingStr = String(rawValue.dropFirst("feedback_rate:".count))
+                if let rating = Int(ratingStr) {
+                    self = .feedbackRate(rating)
+                } else {
+                    return nil
+                }
             } else if rawValue.starts(with: "category_") {
                 let category = String(rawValue.dropFirst("category_".count))
                 self = .category(category)

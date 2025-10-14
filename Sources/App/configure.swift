@@ -69,6 +69,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddCreditsToUsers())
     app.migrations.add(CreateProcessedWebhooks())
     app.migrations.add(AddRecentCategoriesToUsers())
+    app.migrations.add(CreateFeedbacks())
     
     // Автоматически запускать миграции при старте (для Railway)
     if app.environment == .production {
