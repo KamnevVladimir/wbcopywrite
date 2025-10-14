@@ -453,6 +453,7 @@ final class ClaudeService: @unchecked Sendable {
         
         // Детальное логирование для отладки
         app.logger.info("📋 Extracted JSON preview: \(jsonString.prefix(300))...")
+        app.logger.info("📋 Full extracted JSON: \(jsonString)")
         
         guard let jsonData = jsonString.data(using: .utf8) else {
             app.logger.error("❌ Failed to convert JSON string to data")
@@ -463,7 +464,9 @@ final class ClaudeService: @unchecked Sendable {
         
         do {
             // Попытка 1: Прямое декодирование
-            return try decoder.decode(ParsedDescription.self, from: jsonData)
+            let result = try decoder.decode(ParsedDescription.self, from: jsonData)
+            app.logger.debug("✅ Parsed JSON directly")
+            return result
         } catch let directError {
             // Попытка 2: Claude обернул в {"result": {...}}
             do {
