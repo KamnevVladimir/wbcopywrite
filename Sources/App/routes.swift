@@ -97,8 +97,11 @@ func routes(_ app: Application) throws {
         // }
         
         // Шаг 1: Получить тело запроса
+        // Tribute может отправлять тестовый запрос с пустым телом через UI.
+        // Если секрет верный, считаем это health‑check и отвечаем 200.
         guard let body = req.body.data else {
-            throw Abort(.badRequest, reason: "Empty body")
+            req.logger.info("ℹ️ Tribute webhook ping without body — OK")
+            return .ok
         }
         
         // Шаг 2: Проверить HMAC подпись (если Tribute отправляет)
