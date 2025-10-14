@@ -172,9 +172,40 @@ final class MessageHandler: @unchecked Sendable {
             generation.resultHashtags = description.hashtags
             try await generation.save(on: app.db)
             
-            // Отправить результат (через GenerationService)
-            // Временно простой вариант:
-            try await api.sendMessage(chatId: chatId, text: "✅ Улучшено!")
+            // Отправляем улучшенный результат
+            let remainingText = try await repo.getRemainingGenerations(user)
+            let remainingPhoto = try await repo.getRemainingPhotoGenerations(user)
+            let plan = try await repo.getCurrentPlan(user)
+            
+            let nudge = MessageFormatter.smartNudge(
+                remainingText: remainingText,
+                remainingPhoto: remainingPhoto,
+                isFree: plan == .free
+            )
+            
+            let (msg1, msg2, msg3) = MessageFormatter.generationResult(
+                title: description.title,
+                description: description.description,
+                bullets: description.bullets,
+                hashtags: description.hashtags,
+                remainingText: remainingText,
+                remainingPhoto: remainingPhoto,
+                nudge: nudge
+            )
+            
+            try await api.sendMessage(chatId: chatId, text: msg1)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            
+            try await api.sendMessage(chatId: chatId, text: msg2)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            
+            let keyboard = KeyboardBuilder.createPostGenerationKeyboard(
+                category: category,
+                remainingText: remainingText,
+                remainingPhoto: remainingPhoto
+            )
+            
+            try await api.sendMessage(chatId: chatId, text: msg3, replyMarkup: keyboard)
             
         } catch {
             log.generationError(error)
