@@ -18,7 +18,8 @@ final class TelegramAPI: @unchecked Sendable {
     func sendMessage(
         chatId: Int64,
         text: String,
-        replyMarkup: TelegramReplyMarkup? = nil
+        replyMarkup: TelegramReplyMarkup? = nil,
+        parseMode: String = "Markdown"
     ) async throws -> Int {
         let uri = URI(string: "\(baseURL)/sendMessage")
         
@@ -33,7 +34,7 @@ final class TelegramAPI: @unchecked Sendable {
             try req.content.encode(SendMessageRequest(
                 chat_id: chatId,
                 text: text,
-                parse_mode: "Markdown",
+                parse_mode: parseMode,
                 reply_markup: replyMarkup
             ))
         }

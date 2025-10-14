@@ -394,8 +394,9 @@ final class CallbackHandler: @unchecked Sendable {
         }
         
         if !textToCopy.isEmpty {
-            // Отправляем только текст. Без всплывающих уведомлений — Telegram не даёт копировать программно.
-            try await api.sendMessage(chatId: chatId, text: textToCopy)
+            // Отправляем в виде цитаты (preformatted) — удобно копировать по частям
+            let quoted = "> " + textToCopy.replacingOccurrences(of: "\n", with: "\n> ")
+            try await api.sendMessage(chatId: chatId, text: quoted, replyMarkup: nil, parseMode: "Markdown")
         }
     }
     
