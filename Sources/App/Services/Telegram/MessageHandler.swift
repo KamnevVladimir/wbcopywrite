@@ -65,12 +65,23 @@ final class MessageHandler: @unchecked Sendable {
     // MARK: - Text Handlers
     
     private func handleProductText(_ text: String, user: User, chatId: Int64) async throws {
+        // Если категория не выбрана — спросим подтверждение и предложим быстро начать в категории "Другое"
         guard let categoryRaw = user.selectedCategory,
               let category = Constants.ProductCategory(rawValue: categoryRaw) else {
-            try await api.sendMessage(
-                chatId: chatId,
-                text: "⚠️ Сначала выбери категорию товара через /start"
+            let preview = text.prefix(80)
+            let confirmText = """
+            ✍️ Сгенерировать описание для:
+            "\(preview)"
+            """
+            
+            // Кнопка быстрого старта: выбираем категорию "other" и начинаем ввод
+            let keyboard = TelegramReplyMarkup(
+                inlineKeyboard: [[
+                    TelegramInlineKeyboardButton(text: "🚀 Сгенерировать", callbackData: "quick_generate_other")
+                ]]
             )
+            
+            try await api.sendMessage(chatId: chatId, text: confirmText, replyMarkup: keyboard)
             return
         }
         
@@ -177,16 +188,17 @@ final class MessageHandler: @unchecked Sendable {
     private func handlePhoto(_ photos: [TelegramPhotoSize], caption: String?, user: User, chatId: Int64) async throws {
         guard let categoryRaw = user.selectedCategory,
               let category = Constants.ProductCategory(rawValue: categoryRaw) else {
+            let keyboard = TelegramReplyMarkup(
+                inlineKeyboard: [[
+                    TelegramInlineKeyboardButton(text: "🚀 Сгенерировать по фото", callbackData: "quick_generate_other")
+                ]]
+            )
             try await api.sendMessage(
                 chatId: chatId,
                 text: """
                 📷 *Вижу фото!*
-                
-                Сначала выбери категорию товара:
-                /start
-                
-                После выбора категории отправь фото снова.
-                """
+                """,
+                replyMarkup: keyboard
             )
             return
         }

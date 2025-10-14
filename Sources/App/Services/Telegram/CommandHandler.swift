@@ -19,6 +19,8 @@ final class CommandHandler: @unchecked Sendable {
         switch command {
         case "/start":
             try await handleStart(user: user, chatId: chatId)
+        case "/menu":
+            try await handleStart(user: user, chatId: chatId)
         case "/help":
             try await handleHelp(chatId: chatId)
         case "/generate":
@@ -26,6 +28,8 @@ final class CommandHandler: @unchecked Sendable {
         case "/balance":
             try await handleBalance(user: user, chatId: chatId)
         case "/subscribe":
+            try await handleSubscribe(user: user, chatId: chatId)
+        case "/price":
             try await handleSubscribe(user: user, chatId: chatId)
         case "/history":
             try await handleHistory(user: user, chatId: chatId)
@@ -66,6 +70,15 @@ final class CommandHandler: @unchecked Sendable {
         )
         
         try await api.sendMessage(chatId: chatId, text: welcomeText, replyMarkup: fullKeyboard)
+
+        // Второе onboarding-сообщение с подсказками по вводу
+        let onboardingHint = """
+        Подсказка:
+        💡 Можно сразу прислать текст с названием/кратким описанием товара — я спрошу подтверждение и начну генерацию. Также можно отправить фото товара 📷.
+        
+        Команды: /generate — новое описание, /help — помощь, /price — тарифы
+        """
+        try await api.sendMessage(chatId: chatId, text: onboardingHint)
     }
     
     private func handleHelp(chatId: Int64) async throws {
