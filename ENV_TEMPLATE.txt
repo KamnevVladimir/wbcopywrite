@@ -33,6 +33,7 @@ CLAUDE_MODEL=claude-3-5-sonnet-20241022
 TRIBUTE_API_KEY=test_key
 TRIBUTE_SECRET=test_secret
 TRIBUTE_API_URL=https://api.tribute.to/v1
+TRIBUTE_WEBHOOK_SECRET=your_random_secret_here_change_in_production
 
 # GlitchTip / Sentry (Error Tracking & Monitoring)
 # Получить: https://glitchtip.com/ -> New Project -> DSN

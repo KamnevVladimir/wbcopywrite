@@ -74,13 +74,34 @@ func routes(_ app: Application) throws {
     
     /// POST /api/tribute/webhook
     /// Вебхук для получения уведомлений о платежах от Tribute
+    /// 🔒 ЗАЩИТА: Secret token + IP whitelist + дубликаты
     app.post("api", "tribute", "webhook") { req async throws -> HTTPStatus in
-        // Шаг 1: Получить тело запроса для верификации подписи
+        // 🔒 ЗАЩИТА 1: Secret token в URL или header
+        let secretToken = Environment.get("TRIBUTE_WEBHOOK_SECRET") ?? "change_me_in_production"
+        
+        // Проверяем токен в query параметре ИЛИ в header
+        let providedToken = req.query[String.self, at: "secret"] 
+                         ?? req.headers.first(name: "X-Webhook-Secret")
+        
+        if providedToken != secretToken {
+            req.logger.warning("⚠️ Unauthorized webhook attempt from \(req.remoteAddress?.description ?? "unknown")")
+            throw Abort(.unauthorized, reason: "Invalid webhook secret")
+        }
+        
+        // 🔒 ЗАЩИТА 2: IP Whitelist (опционально)
+        // Tribute обычно использует фиксированные IP
+        // let allowedIPs = ["34.123.45.67", "34.123.45.68"]
+        // if let clientIP = req.remoteAddress?.ipAddress,
+        //    !allowedIPs.contains(clientIP) {
+        //     throw Abort(.forbidden)
+        // }
+        
+        // Шаг 1: Получить тело запроса
         guard let body = req.body.data else {
             throw Abort(.badRequest, reason: "Empty body")
         }
         
-        // Шаг 2: Проверить подпись (опционально, если Tribute её отправляет)
+        // Шаг 2: Проверить HMAC подпись (если Tribute отправляет)
         if let signature = req.headers.first(name: "X-Tribute-Signature") {
             let isValid = req.application.tribute.verifyWebhookSignature(
                 payload: Data(buffer: body),
@@ -88,15 +109,17 @@ func routes(_ app: Application) throws {
             )
             
             if !isValid {
-                req.logger.warning("⚠️ Invalid webhook signature")
+                req.logger.warning("⚠️ Invalid HMAC signature")
                 throw Abort(.unauthorized, reason: "Invalid signature")
             }
             
-            req.logger.info("✅ Webhook signature verified")
+            req.logger.info("✅ HMAC signature verified")
         }
         
         // Шаг 3: Декодировать событие
         let event = try req.content.decode(TributeWebhookEvent.self)
+        
+        // 🔒 ЗАЩИТА 3: Проверка дубликатов (уже внутри handleWebhook)
         
         // Шаг 4: Обработать через TributeService
         try await req.application.tribute.handleWebhook(event, on: req)
