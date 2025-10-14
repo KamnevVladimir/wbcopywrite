@@ -243,14 +243,12 @@ final class GenerationService: @unchecked Sendable {
 ⚡️ Осталось: \(remainingText) текстов + \(remainingPhoto) фото
 """
         
-        // Кнопки экспорта
-        let exportButtons = [
-            TelegramInlineKeyboardButton(text: "📄 TXT", callbackData: "export_txt"),
-            TelegramInlineKeyboardButton(text: "📊 CSV", callbackData: "export_csv"),
-            TelegramInlineKeyboardButton(text: "📗 XLSX", callbackData: "export_xlsx")
-        ]
-        
-        let keyboard = TelegramReplyMarkup(inlineKeyboard: [exportButtons])
+        // Используем правильную клавиатуру с кнопками
+        let keyboard = KeyboardBuilder.createGenerationResultKeyboard(
+            category: currentCategory,
+            remainingText: remainingText,
+            remainingPhoto: remainingPhoto
+        )
         
         try await api.sendMessage(chatId: chatId, text: result, replyMarkup: keyboard)
     }
