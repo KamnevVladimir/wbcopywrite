@@ -170,6 +170,8 @@ final class CallbackHandler: @unchecked Sendable {
         
         if format == "excel" {
             try await exportExcel(generation: generation, chatId: chatId)
+        } else if format == "csv" {
+            try await exportCSV(generation: generation, chatId: chatId)
         } else {
             try await exportTxt(generation: generation, chatId: chatId)
         }
@@ -226,11 +228,43 @@ final class CallbackHandler: @unchecked Sendable {
             try await api.sendMessage(chatId: chatId, text: "❌ Данные генерации неполные")
             return
         }
+        // Генерируем простой Excel 2003 XML (SpreadsheetML) — открывается в Excel как .xls
+        let bulletsLines = bullets.map { "<Row><Cell/><Cell><Data ss:Type=\"String\">\($0.xmlEscaped)</Data></Cell></Row>" }.joined()
+        let hashtagsText = hashtags.joined(separator: " ")
+        let xml = """
+        <?xml version="1.0"?>
+        <?mso-application progid="Excel.Sheet"?>
+        <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+          <Worksheet ss:Name="Описание">
+            <Table>
+              <Row><Cell><Data ss:Type="String">Заголовок</Data></Cell><Cell><Data ss:Type="String">\(title.xmlEscaped)</Data></Cell></Row>
+              <Row><Cell><Data ss:Type="String">Описание</Data></Cell><Cell><Data ss:Type="String">\(description.xmlEscaped)</Data></Cell></Row>
+              <Row><Cell><Data ss:Type="String">Выгоды</Data></Cell><Cell><Data ss:Type="String"></Data></Cell></Row>
+              \(bulletsLines)
+              <Row><Cell><Data ss:Type="String">Хештеги</Data></Cell><Cell><Data ss:Type="String">\(hashtagsText.xmlEscaped)</Data></Cell></Row>
+            </Table>
+          </Worksheet>
+        </Workbook>
+        """
         
-        // Создаём CSV (Excel его читает)
+        try await api.sendDocument(
+            chatId: chatId,
+            content: xml,
+            filename: "description_\(generation.id?.uuidString.prefix(8) ?? "export").xls",
+            caption: "📊 Экспорт в Excel (.xls)"
+        )
+    }
+
+    private func exportCSV(generation: Generation, chatId: Int64) async throws {
+        guard let title = generation.resultTitle,
+              let description = generation.resultDescription,
+              let bullets = generation.resultBullets,
+              let hashtags = generation.resultHashtags else {
+            try await api.sendMessage(chatId: chatId, text: "❌ Данные генерации неполные")
+            return
+        }
         let bulletsText = bullets.map { $0.replacingOccurrences(of: "\"", with: "\"\"") }.joined(separator: "\n")
         let hashtagsText = hashtags.joined(separator: " ")
-        
         let csvContent = """
         "Поле","Значение"
         "Заголовок","\(title.replacingOccurrences(of: "\"", with: "\"\""))"
@@ -238,12 +272,11 @@ final class CallbackHandler: @unchecked Sendable {
         "Выгоды","\(bulletsText)"
         "Хештеги","\(hashtagsText)"
         """
-        
-            try await api.sendDocument(
+        try await api.sendDocument(
             chatId: chatId,
             content: csvContent,
-                filename: "description_\(generation.id?.uuidString.prefix(8) ?? "export").csv",
-                caption: "📊 Экспорт в CSV (открывается в Excel)"
+            filename: "description_\(generation.id?.uuidString.prefix(8) ?? "export").csv",
+            caption: "📈 Экспорт в CSV"
         )
     }
     

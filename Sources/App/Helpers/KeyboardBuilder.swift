@@ -153,7 +153,10 @@ struct KeyboardBuilder {
     static func createExportFormatKeyboard() -> TelegramReplyMarkup {
         TelegramReplyMarkup(inlineKeyboard: [
             [
-                TelegramInlineKeyboardButton(text: "📊 CSV (.csv)", callbackData: "export_excel"),
+                TelegramInlineKeyboardButton(text: "📊 Excel (.xls)", callbackData: "export_excel"),
+                TelegramInlineKeyboardButton(text: "📈 CSV (.csv)", callbackData: "export_csv")
+            ],
+            [
                 TelegramInlineKeyboardButton(text: "📄 Текст (.txt)", callbackData: "export_txt")
             ],
             [TelegramInlineKeyboardButton(text: "« Назад", callbackData: "back_to_main")]
@@ -166,15 +169,15 @@ struct KeyboardBuilder {
     static func createCopyPartsKeyboard() -> TelegramReplyMarkup {
         TelegramReplyMarkup(inlineKeyboard: [
             [
-                TelegramInlineKeyboardButton(text: "📝 Заголовок", callbackData: "copy_title"),
-                TelegramInlineKeyboardButton(text: "📄 Описание", callbackData: "copy_description")
+                TelegramInlineKeyboardButton(text: "📝 Показать заголовок", callbackData: "copy_title"),
+                TelegramInlineKeyboardButton(text: "📄 Показать описание", callbackData: "copy_description")
             ],
             [
-                TelegramInlineKeyboardButton(text: "🎯 Выгоды", callbackData: "copy_bullets"),
-                TelegramInlineKeyboardButton(text: "🏷 Хештеги", callbackData: "copy_hashtags")
+                TelegramInlineKeyboardButton(text: "🎯 Показать выгоды", callbackData: "copy_bullets"),
+                TelegramInlineKeyboardButton(text: "🏷 Показать хештеги", callbackData: "copy_hashtags")
             ],
             [
-                TelegramInlineKeyboardButton(text: "📋 Всё сразу", callbackData: "copy_all")
+                TelegramInlineKeyboardButton(text: "📋 Показать всё", callbackData: "copy_all")
             ],
             [TelegramInlineKeyboardButton(text: "« Назад", callbackData: "back_to_main")]
         ])
