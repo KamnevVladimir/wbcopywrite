@@ -239,11 +239,11 @@ final class CallbackHandler: @unchecked Sendable {
         "Хештеги","\(hashtagsText)"
         """
         
-        try await api.sendDocument(
+            try await api.sendDocument(
             chatId: chatId,
             content: csvContent,
-            filename: "description_\(generation.id?.uuidString.prefix(8) ?? "export").csv",
-            caption: "📊 Твоё описание в Excel формате!"
+                filename: "description_\(generation.id?.uuidString.prefix(8) ?? "export").csv",
+                caption: "📊 Экспорт в CSV (открывается в Excel)"
         )
     }
     

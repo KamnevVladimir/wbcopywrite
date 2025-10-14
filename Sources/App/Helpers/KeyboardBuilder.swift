@@ -153,7 +153,7 @@ struct KeyboardBuilder {
     static func createExportFormatKeyboard() -> TelegramReplyMarkup {
         TelegramReplyMarkup(inlineKeyboard: [
             [
-                TelegramInlineKeyboardButton(text: "📊 Excel (.xlsx)", callbackData: "export_excel"),
+                TelegramInlineKeyboardButton(text: "📊 CSV (.csv)", callbackData: "export_excel"),
                 TelegramInlineKeyboardButton(text: "📄 Текст (.txt)", callbackData: "export_txt")
             ],
             [TelegramInlineKeyboardButton(text: "« Назад", callbackData: "back_to_main")]
