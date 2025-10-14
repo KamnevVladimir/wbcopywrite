@@ -228,23 +228,25 @@ final class CallbackHandler: @unchecked Sendable {
             try await api.sendMessage(chatId: chatId, text: "❌ Данные генерации неполные")
             return
         }
-        // Генерируем простой Excel 2003 XML (SpreadsheetML) — открывается в Excel как .xls
-        let bulletsLines = bullets.map { "<Row><Cell/><Cell><Data ss:Type=\"String\">\($0.xmlEscaped)</Data></Cell></Row>" }.joined()
+        // Генерируем HTML-таблицу с расширением .xls — корректно открывается в Excel
+        let bulletsHtml = bullets.map { "&bull; \($0.xmlEscaped)" }.joined(separator: "<br/>")
         let hashtagsText = hashtags.joined(separator: " ")
         let xml = """
-        <?xml version="1.0"?>
-        <?mso-application progid="Excel.Sheet"?>
-        <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-          <Worksheet ss:Name="Описание">
-            <Table>
-              <Row><Cell><Data ss:Type="String">Заголовок</Data></Cell><Cell><Data ss:Type="String">\(title.xmlEscaped)</Data></Cell></Row>
-              <Row><Cell><Data ss:Type="String">Описание</Data></Cell><Cell><Data ss:Type="String">\(description.xmlEscaped)</Data></Cell></Row>
-              <Row><Cell><Data ss:Type="String">Выгоды</Data></Cell><Cell><Data ss:Type="String"></Data></Cell></Row>
-              \(bulletsLines)
-              <Row><Cell><Data ss:Type="String">Хештеги</Data></Cell><Cell><Data ss:Type="String">\(hashtagsText.xmlEscaped)</Data></Cell></Row>
-            </Table>
-          </Worksheet>
-        </Workbook>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8"/>
+          <title>Описание</title>
+        </head>
+        <body>
+          <table border="1" cellspacing="0" cellpadding="5">
+            <tr><th>Заголовок</th><td>\(title.xmlEscaped)</td></tr>
+            <tr><th>Описание</th><td>\(description.xmlEscaped)</td></tr>
+            <tr><th>Выгоды</th><td>\(bulletsHtml)</td></tr>
+            <tr><th>Хештеги</th><td>\(hashtagsText.xmlEscaped)</td></tr>
+          </table>
+        </body>
+        </html>
         """
         
         try await api.sendDocument(
@@ -392,8 +394,8 @@ final class CallbackHandler: @unchecked Sendable {
         }
         
         if !textToCopy.isEmpty {
+            // Отправляем только текст. Без всплывающих уведомлений — Telegram не даёт копировать программно.
             try await api.sendMessage(chatId: chatId, text: textToCopy)
-            try await api.answerCallback(callbackId: callbackId, text: "✅ Скопировано!")
         }
     }
     
