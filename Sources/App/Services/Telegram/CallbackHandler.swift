@@ -61,10 +61,10 @@ final class CallbackHandler: @unchecked Sendable {
             try await handleViewPackages(user: user, chatId: chatId)
             
         case .copyMenu:
-            try await handleCopyMenu(user: user, chatId: chatId)
+            return // копирование отключено
             
-        case .copyPart(let part):
-            try await handleCopyPart(part, user: user, chatId: chatId, callbackId: callback.id)
+        case .copyPart:
+            return // копирование отключено
             
         case .viewGeneration(let uuid):
             try await handleViewGeneration(uuid, user: user, chatId: chatId)
@@ -335,70 +335,9 @@ final class CallbackHandler: @unchecked Sendable {
         try await api.sendMessage(chatId: chatId, text: text, replyMarkup: keyboard)
     }
     
-    private func handleCopyMenu(user: User, chatId: Int64) async throws {
-        let hasGenerations = try await Generation.query(on: app.db)
-            .filter(\.$user.$id == user.id!)
-            .count() > 0
-        
-        guard hasGenerations else {
-            try await api.sendMessage(chatId: chatId, text: "❌ Нет сохранённых описаний")
-            return
-        }
-        
-        let text = """
-        📋 *Копирование по частям*
-        
-        Выбери что скопировать из последнего описания:
-        """
-        
-        let keyboard = KeyboardBuilder.createCopyPartsKeyboard()
-        try await api.sendMessage(chatId: chatId, text: text, replyMarkup: keyboard)
-    }
+    private func handleCopyMenu(user: User, chatId: Int64) async throws { }
     
-    private func handleCopyPart(_ part: String, user: User, chatId: Int64, callbackId: String) async throws {
-        let lastGen = try await Generation.query(on: app.db)
-            .filter(\.$user.$id == user.id!)
-            .sort(\.$createdAt, .descending)
-            .first()
-        
-        guard let generation = lastGen else {
-            try await api.sendMessage(chatId: chatId, text: "❌ Нет генераций")
-            return
-        }
-        
-        let textToCopy: String
-        
-        switch part {
-        case "title":
-            textToCopy = generation.resultTitle ?? ""
-        case "description":
-            textToCopy = generation.resultDescription ?? ""
-        case "bullets":
-            textToCopy = (generation.resultBullets ?? []).map { "• \($0)" }.joined(separator: "\n")
-        case "hashtags":
-            textToCopy = (generation.resultHashtags ?? []).joined(separator: " ")
-        case "all":
-            let bullets = (generation.resultBullets ?? []).map { "• \($0)" }.joined(separator: "\n")
-            let hashtags = (generation.resultHashtags ?? []).joined(separator: " ")
-            textToCopy = """
-            \(generation.resultTitle ?? "")
-            
-            \(generation.resultDescription ?? "")
-            
-            \(bullets)
-            
-            \(hashtags)
-            """
-        default:
-            textToCopy = ""
-        }
-        
-        if !textToCopy.isEmpty {
-            // Отправляем в виде цитаты (preformatted) — удобно копировать по частям
-            let quoted = "> " + textToCopy.replacingOccurrences(of: "\n", with: "\n> ")
-            try await api.sendMessage(chatId: chatId, text: quoted, replyMarkup: nil, parseMode: "Markdown")
-        }
-    }
+    private func handleCopyPart(_ part: String, user: User, chatId: Int64, callbackId: String) async throws { }
     
     private func handleViewGeneration(_ uuid: String, user: User, chatId: Int64) async throws {
         guard let genUUID = UUID(uuidString: uuid),

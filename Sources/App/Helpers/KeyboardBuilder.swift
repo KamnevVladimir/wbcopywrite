@@ -83,10 +83,9 @@ struct KeyboardBuilder {
             ])
         }
         
-        // РЯД 2: Улучшить + Копировать
+        // РЯД 2: Только улучшить
         buttons.append([
-            TelegramInlineKeyboardButton(text: "✨ Улучшить", callbackData: "improve_last"),
-            TelegramInlineKeyboardButton(text: "📋 Копировать", callbackData: "copy_menu")
+            TelegramInlineKeyboardButton(text: "✨ Улучшить", callbackData: "improve_last")
         ])
         
         // РЯД 3: Навигация

@@ -216,22 +216,9 @@ final class GenerationService: @unchecked Sendable {
             remainingPhoto: remainingPhoto,
             nudge: nudge
         )
-        
-        // Отправляем по частям
-        try await api.sendMessage(chatId: chatId, text: msg1)
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        
-        try await api.sendMessage(chatId: chatId, text: msg2)
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        
-        // Последнее сообщение с кнопками
-        let keyboard = KeyboardBuilder.createPostGenerationKeyboard(
-            category: currentCategory,
-            remainingText: remainingText,
-            remainingPhoto: remainingPhoto
-        )
-        
-        try await api.sendMessage(chatId: chatId, text: msg3, replyMarkup: keyboard)
+        // Отправляем одним цитированным блоком без кнопок копирования
+        let quotedAll = "> " + [msg1, msg2, msg3].joined(separator: "\n\n").replacingOccurrences(of: "\n", with: "\n> ")
+        try await api.sendMessage(chatId: chatId, text: quotedAll, parseMode: "Markdown")
     }
     
     // MARK: - Errors
