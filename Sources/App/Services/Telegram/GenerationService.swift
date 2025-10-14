@@ -244,7 +244,7 @@ final class GenerationService: @unchecked Sendable {
 """
         
         // Используем правильную клавиатуру с кнопками
-        let keyboard = KeyboardBuilder.createGenerationResultKeyboard(
+        let keyboard = KeyboardBuilder.createPostGenerationKeyboard(
             category: currentCategory,
             remainingText: remainingText,
             remainingPhoto: remainingPhoto
