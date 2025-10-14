@@ -216,12 +216,12 @@ final class GenerationService: @unchecked Sendable {
             remainingPhoto: remainingPhoto,
             nudge: nudge
         )
-        // Формируем два код-блока: заголовок и описание (включая выгоды и хештеги)
+        // Формируем результат
         let bulletsText = description.bullets.map { "• \($0)" }.joined(separator: "\n")
         let hashtagsText = description.hashtags.joined(separator: " ")
-        let combinedBody = "\(description.description)\n\n🎯 КЛЮЧЕВЫЕ ВЫГОДЫ:\n\(bulletsText)\n\n🏷 ХЕШТЕГИ:\n\(hashtagsText)"
+        
         let result = """
-        ✅ Готово!
+✅ Готово!
 
 📝 ЗАГОЛОВОК:
 ```
@@ -230,12 +230,19 @@ final class GenerationService: @unchecked Sendable {
 
 📄 ОПИСАНИЕ:
 ```
-\(combinedBody)
+\(description.description)
+
+🎯 КЛЮЧЕВЫЕ ВЫГОДЫ:
+\(bulletsText)
+
+🏷 ХЕШТЕГИ:
+\(hashtagsText)
 ```
 
 ━━━━━━━━━━━━━━━━━━━━
 ⚡️ Осталось: \(remainingText) текстов + \(remainingPhoto) фото
-        """
+"""
+        
         try await api.sendMessage(chatId: chatId, text: result)
     }
     
