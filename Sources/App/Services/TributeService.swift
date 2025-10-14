@@ -51,15 +51,30 @@ final class TributeService: @unchecked Sendable {
     /// Проверить подпись вебхука
     func verifyWebhookSignature(payload: Data, signature: String) -> Bool {
         // HMAC-SHA256 верификация
-        guard let payloadString = String(data: payload, encoding: .utf8) else {
-            return false
+        // По документации Tribute: подпись создается с использованием API ключа
+        
+        // Пробуем с apiKey (основной вариант по документации)
+        let keyWithApiKey = SymmetricKey(data: Data(apiKey.utf8))
+        let hmacWithApiKey = HMAC<SHA256>.authenticationCode(for: payload, using: keyWithApiKey)
+        let signatureWithApiKey = hmacWithApiKey.map { String(format: "%02x", $0) }.joined()
+        
+        if signatureWithApiKey.lowercased() == signature.lowercased() {
+            app.logger.debug("✅ HMAC verified with API_KEY")
+            return true
         }
         
-        let key = SymmetricKey(data: Data(apiSecret.utf8))
-        let hmac = HMAC<SHA256>.authenticationCode(for: Data(payloadString.utf8), using: key)
-        let computedSignature = Data(hmac).base64EncodedString()
+        // Пробуем с apiSecret (запасной вариант)
+        let keyWithSecret = SymmetricKey(data: Data(apiSecret.utf8))
+        let hmacWithSecret = HMAC<SHA256>.authenticationCode(for: payload, using: keyWithSecret)
+        let signatureWithSecret = hmacWithSecret.map { String(format: "%02x", $0) }.joined()
         
-        return computedSignature == signature
+        if signatureWithSecret.lowercased() == signature.lowercased() {
+            app.logger.debug("✅ HMAC verified with SECRET")
+            return true
+        }
+        
+        app.logger.warning("❌ HMAC mismatch: apiKey=\(signatureWithApiKey.prefix(16))... secret=\(signatureWithSecret.prefix(16))... received=\(signature.prefix(16))...")
+        return false
     }
     
 }
