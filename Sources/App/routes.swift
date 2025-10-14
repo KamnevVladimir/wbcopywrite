@@ -74,132 +74,54 @@ func routes(_ app: Application) throws {
     
     /// POST /api/tribute/webhook
     /// Вебхук для получения уведомлений о платежах от Tribute
-    /// 🔒 ЗАЩИТА: Secret token + IP whitelist + дубликаты
+    /// Документация: https://wiki.tribute.tg/ru/api-dokumentaciya/vebkhuki
+    /// Защита: HMAC-SHA256 подпись в заголовке trbt-signature
     app.post("api", "tribute", "webhook") { req async throws -> HTTPStatus in
-        // 🔒 ЗАЩИТА 1: Secret token в URL или header
-        let secretToken = Environment.get("TRIBUTE_WEBHOOK_SECRET") ?? "change_me_in_production"
-        
-        // Проверяем токен в query параметре ИЛИ в header
-        let providedToken = req.query[String.self, at: "secret"] 
-                         ?? req.headers.first(name: "X-Webhook-Secret")
-        
-        if providedToken != secretToken {
-            req.logger.warning("⚠️ Unauthorized webhook attempt from \(req.remoteAddress?.description ?? "unknown")")
-            throw Abort(.unauthorized, reason: "Invalid webhook secret")
-        }
-        
-        // 🔒 ЗАЩИТА 2: IP Whitelist (опционально)
-        // Tribute обычно использует фиксированные IP
-        // let allowedIPs = ["34.123.45.67", "34.123.45.68"]
-        // if let clientIP = req.remoteAddress?.ipAddress,
-        //    !allowedIPs.contains(clientIP) {
-        //     throw Abort(.forbidden)
-        // }
-        
-        // Шаг 1: Получить тело запроса
-        // Tribute может отправлять тестовый запрос с пустым телом через UI.
-        // Если секрет верный, считаем это health‑check и отвечаем 200.
         guard let body = req.body.data else {
             req.logger.info("ℹ️ Tribute webhook ping without body — OK")
             return .ok
         }
-        // Диагностика: логируем тип и превью тела (без чувствительных данных)
-        let contentType = req.headers.first(name: "Content-Type") ?? ""
-        let bodyString = String(buffer: body)
-        let preview = bodyString.prefix(512)
-        req.logger.info("ℹ️ Tribute webhook headers: Content-Type=\(contentType); body.len=\(body.readableBytes), preview=\(preview)")
         
-        // Шаг 2: Проверить HMAC подпись (если Tribute отправляет)
-        if let signature = req.headers.first(name: "X-Tribute-Signature") {
-            let isValid = req.application.tribute.verifyWebhookSignature(
-                payload: Data(buffer: body),
-                signature: signature
-            )
-            
-            if !isValid {
-                req.logger.warning("⚠️ Invalid HMAC signature")
-                throw Abort(.unauthorized, reason: "Invalid signature")
-            }
-            
-            req.logger.info("✅ HMAC signature verified")
+        guard let signature = req.headers.first(name: "trbt-signature") ?? req.headers.first(name: "X-Tribute-Signature") else {
+            req.logger.warning("⚠️ Missing HMAC signature in webhook")
+            throw Abort(.unauthorized, reason: "Missing signature")
         }
         
-        // Шаг 3: Декодировать событие
+        let isValid = req.application.tribute.verifyWebhookSignature(
+            payload: Data(buffer: body),
+            signature: signature
+        )
+        
+        guard isValid else {
+            req.logger.warning("⚠️ Invalid HMAC signature from \(req.remoteAddress?.description ?? "unknown")")
+            throw Abort(.unauthorized, reason: "Invalid signature")
+        }
+        
+        req.logger.info("✅ HMAC signature verified")
+        
         do {
-            // Попытка 1: обычный JSON
-            let event = try req.content.decode(TributeWebhookEvent.self)
-            // 🔒 ЗАЩИТА 3: Проверка дубликатов (уже внутри handleWebhook)
-            // Шаг 4: Обработать через TributeService
-            try await req.application.tribute.handleWebhook(event, on: req)
+            let parser = TributeWebhookParser()
+            let event = try parser.parse(req)
+            
+            let handler = TributeWebhookHandler(app: req.application)
+            try await handler.handle(event, on: req)
+            
+            return .ok
+        } catch TributeWebhookParser.ParseError.invalidFormat {
+            req.logger.warning("⚠️ Invalid webhook format, returning 200 for compatibility")
+            return .ok
+        } catch TributeWebhookHandler.HandlerError.duplicateEvent {
+            req.logger.info("⏭️ Duplicate event, skipping")
             return .ok
         } catch {
-            // Попытка 1.1: JSON формата { id, type, payload { ... } }
-            struct AltPayload: Content { let product_id: Int?; let amount: Int; let currency: String; let telegram_user_id: Int64; let status: String?; let description: String? }
-            struct AltEvent: Content { let id: String; let type: String; let payload: AltPayload }
-            if let alt = try? req.content.decode(AltEvent.self) {
-                let createdAt = ISO8601DateFormatter().string(from: Date())
-                let data = TributeWebhookEvent.WebhookData(
-                    paymentId: alt.id,
-                    subscriptionId: nil,
-                    userId: String(alt.payload.telegram_user_id),
-                    amount: alt.payload.amount,
-                    currency: alt.payload.currency,
-                    status: alt.payload.status ?? "succeeded",
-                    description: alt.payload.description
-                )
-                let normalized = TributeWebhookEvent(
-                    id: alt.id,
-                    type: alt.type,
-                    data: data,
-                    createdAt: createdAt
-                )
-                try await req.application.tribute.handleWebhook(normalized, on: req)
-                return .ok
-            }
-            // Попытка 2: application/x-www-form-urlencoded с полем payload
-            if contentType.contains("application/x-www-form-urlencoded") {
-                struct FormEnvelope: Content { let id: String?; let type: String?; let payload: String?; let data: String? }
-                if let form = try? req.content.decode(FormEnvelope.self) {
-                    if let json = form.payload ?? form.data,
-                       let jsonData = json.data(using: .utf8),
-                       let alt = try? JSONDecoder().decode(AltEvent.self, from: jsonData) {
-                        let createdAt = ISO8601DateFormatter().string(from: Date())
-                        let data = TributeWebhookEvent.WebhookData(
-                            paymentId: alt.id,
-                            subscriptionId: nil,
-                            userId: String(alt.payload.telegram_user_id),
-                            amount: alt.payload.amount,
-                            currency: alt.payload.currency,
-                            status: alt.payload.status ?? "succeeded",
-                            description: alt.payload.description
-                        )
-                        let normalized = TributeWebhookEvent(
-                            id: alt.id,
-                            type: alt.type,
-                            data: data,
-                            createdAt: createdAt
-                        )
-                        try await req.application.tribute.handleWebhook(normalized, on: req)
-                        return .ok
-                    }
-                }
-            }
-            // Тестовый/неизвестный формат — просто 200, чтобы они считали вебхук доступным
-            req.logger.info("ℹ️ Tribute webhook test without payload — returning 200. Error: \(error)")
-            return .ok
+            req.logger.error("❌ Webhook processing error: \(error)")
+            throw error
         }
     }
 
     /// GET /api/tribute/webhook
     /// Health-check от Tribute UI "Отправить тестовый запрос"
     app.get("api", "tribute", "webhook") { req async throws -> HTTPStatus in
-        let secretToken = Environment.get("TRIBUTE_WEBHOOK_SECRET") ?? "change_me_in_production"
-        let providedToken = req.query[String.self, at: "secret"]
-                         ?? req.headers.first(name: "X-Webhook-Secret")
-        if providedToken != secretToken {
-            req.logger.warning("⚠️ Unauthorized webhook GET attempt from \(req.remoteAddress?.description ?? "unknown")")
-            throw Abort(.unauthorized, reason: "Invalid webhook secret")
-        }
         req.logger.info("✅ Tribute webhook GET ping OK")
         return .ok
     }

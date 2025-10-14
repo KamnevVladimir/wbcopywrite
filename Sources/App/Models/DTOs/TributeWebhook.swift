@@ -1,9 +1,64 @@
 import Vapor
 
-// MARK: - Tribute Payment DTOs
+// MARK: - Tribute Webhook DTO (по официальной документации)
+
+/// Структура вебхука о покупке цифрового товара
+/// Документация: https://wiki.tribute.tg/ru/api-dokumentaciya/vebkhuki
+struct TributeDigitalProductWebhook: Content {
+    let name: String
+    let createdAt: String
+    let sentAt: String
+    let payload: Payload
+    
+    enum CodingKeys: String, CodingKey {
+        case name
+        case createdAt = "created_at"
+        case sentAt = "sent_at"
+        case payload
+    }
+    
+    struct Payload: Content {
+        let productId: Int
+        let amount: Int
+        let currency: String
+        let userId: Int?
+        let telegramUserId: Int64
+        
+        enum CodingKeys: String, CodingKey {
+            case productId = "product_id"
+            case amount
+            case currency
+            case userId = "user_id"
+            case telegramUserId = "telegram_user_id"
+        }
+    }
+    
+    var isDigitalProductPurchase: Bool {
+        name == "new_digital_product"
+    }
+}
+
+// MARK: - Внутренняя нормализованная модель
+
+struct NormalizedWebhookEvent {
+    let id: String
+    let type: EventType
+    let telegramUserId: Int64
+    let productId: Int?
+    let amount: Int
+    let currency: String
+    let createdAt: String
+    
+    enum EventType {
+        case digitalProductPurchase
+        case unknown
+    }
+}
+
+// MARK: - Legacy DTOs (для обратной совместимости)
 
 struct TributePaymentRequest: Content {
-    let amount: Int // в копейках
+    let amount: Int
     let currency: String
     let description: String
     let userId: String
@@ -34,60 +89,3 @@ struct TributePaymentResponse: Content {
     let url: String
     let status: String
 }
-
-struct TributeWebhookEvent: Content {
-    let id: String
-    let type: String
-    let data: WebhookData
-    let createdAt: String
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case type
-        case data
-        case createdAt = "created_at"
-    }
-    
-    struct WebhookData: Content {
-        let paymentId: String
-        let subscriptionId: String?
-        let userId: String
-        let amount: Int
-        let currency: String
-        let status: String
-        let description: String?
-        
-        enum CodingKeys: String, CodingKey {
-            case paymentId = "payment_id"
-            case subscriptionId = "subscription_id"
-            case userId = "user_id"
-            case amount
-            case currency
-            case status
-            case description
-        }
-    }
-    
-    enum EventType: String {
-        case paymentSucceeded = "payment.succeeded"
-        case paymentFailed = "payment.failed"
-        case subscriptionCreated = "subscription.created"
-        case subscriptionCancelled = "subscription.cancelled"
-        case subscriptionRenewed = "subscription.renewed"
-    }
-}
-
-// MARK: - Signature verification
-
-struct TributeWebhookSignature {
-    let timestamp: String
-    let signature: String
-    
-    static func verify(payload: String, signature: String, secret: String) -> Bool {
-        // TODO: Implement HMAC-SHA256 verification
-        // For now, just return true in development
-        return true
-    }
-}
-
-
