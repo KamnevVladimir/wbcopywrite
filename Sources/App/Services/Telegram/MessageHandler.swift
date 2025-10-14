@@ -97,8 +97,13 @@ final class MessageHandler: @unchecked Sendable {
         let repo = UserRepository(database: app.db)
         try await repo.updateCategory(user, category: "other")
         
-        let text = MessageFormatter.customCategoryAccepted(categoryName)
-        try await api.sendMessage(chatId: chatId, text: text)
+        // Сразу генерируем описание, используя введённый текст как описание товара
+        try await generationService.generateFromText(
+            text: categoryName,
+            category: .other,
+            user: user,
+            chatId: chatId
+        )
     }
     
     private func handleImproveInput(_ improvementText: String, user: User, chatId: Int64) async throws {
