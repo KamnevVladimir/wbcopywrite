@@ -10,6 +10,14 @@ extension String {
         s = s.replacingOccurrences(of: "'", with: "&apos;")
         return s
     }
+    
+    var htmlEscapedNoMarkdown: String {
+        // Убираем Markdown символы, чтобы не конфликтовали с HTML parse_mode
+        let stripped = self.replacingOccurrences(of: "*", with: "")
+                           .replacingOccurrences(of: "_", with: "")
+                           .replacingOccurrences(of: "`", with: "")
+        return stripped.xmlEscaped
+    }
 }
 
 
