@@ -451,6 +451,9 @@ final class ClaudeService: @unchecked Sendable {
         // Извлечь JSON из ответа (Claude может добавить текст до/после)
         let jsonString = extractJSON(from: content)
         
+        // Детальное логирование для отладки
+        app.logger.info("📋 Extracted JSON preview: \(jsonString.prefix(300))...")
+        
         guard let jsonData = jsonString.data(using: .utf8) else {
             app.logger.error("❌ Failed to convert JSON string to data")
             throw ClaudeError.invalidJSON
