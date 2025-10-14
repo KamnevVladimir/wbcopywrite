@@ -29,12 +29,8 @@ struct MessageFormatter {
         ✅ 7 хештегов для поиска
         ✅ Анализ фото товара 📷
         
-        Подсказка:
-        
-        💡 Можно сразу прислать текст с названием/кратким описанием товара — я спрошу подтверждение и начну генерацию. Также можно отправить фото товара 📷.
-        
         Команды: /generate — новое описание, /help — помощь, /price — тарифы
-        
+
         Выбери категорию товара:
         """
     }
@@ -158,8 +154,6 @@ struct MessageFormatter {
     static func subscriptionPlans(currentPlan: Constants.SubscriptionPlan) -> String {
         """
         💎 *ПАКЕТЫ КАРТОЧКАПРО*
-        
-        Твой текущий: *\(currentPlan.emoji) \(currentPlan.name)*
         
         📦 *МАЛЫЙ* - 299₽
         • 20 текстов + 3 бонус фото
