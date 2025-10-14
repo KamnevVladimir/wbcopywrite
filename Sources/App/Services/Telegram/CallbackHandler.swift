@@ -77,6 +77,9 @@ final class CallbackHandler: @unchecked Sendable {
             
         case .viewHistory(let offset, let limit):
             try await handleViewHistory(offset, limit, user: user, chatId: chatId)
+            
+        case .backToMain:
+            try await handleBackToMain(user: user, chatId: chatId)
         }
         
         try await api.answerCallback(callbackId: callback.id)
@@ -462,6 +465,11 @@ final class CallbackHandler: @unchecked Sendable {
         let commandHandler = CommandHandler(app: app, api: api)
         try await commandHandler.handle("/history", user: user, chatId: chatId)
     }
+    
+    private func handleBackToMain(user: User, chatId: Int64) async throws {
+        let commandHandler = CommandHandler(app: app, api: api)
+        try await commandHandler.handle("/start", user: user, chatId: chatId)
+    }
 }
 
 // MARK: - Callback Data Enum
@@ -484,9 +492,12 @@ extension CallbackHandler {
         case improveLast
         case improveResult(String)
         case viewHistory(Int, Int)
+        case backToMain
         
         init?(rawValue: String) {
-            if rawValue == "improve_last" {
+            if rawValue == "back_to_main" {
+                self = .backToMain
+            } else if rawValue == "improve_last" {
                 self = .improveLast
             } else if rawValue.starts(with: "category_") {
                 let category = String(rawValue.dropFirst("category_".count))

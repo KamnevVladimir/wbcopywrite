@@ -123,7 +123,8 @@ struct KeyboardBuilder {
             [TelegramInlineKeyboardButton(text: "📦 Малый 299₽", callbackData: "buy_small")],
             [TelegramInlineKeyboardButton(text: "📦📦 Средний 599₽", callbackData: "buy_medium")],
             [TelegramInlineKeyboardButton(text: "📦📦📦 Большой 999₽", callbackData: "buy_large")],
-            [TelegramInlineKeyboardButton(text: "🎁💎 Максимальный 1,399₽", callbackData: "buy_max")]
+            [TelegramInlineKeyboardButton(text: "🎁💎 Максимальный 1,399₽", callbackData: "buy_max")],
+            [TelegramInlineKeyboardButton(text: "🏠 На главную", callbackData: "back_to_main")]
         ])
     }
     
@@ -141,7 +142,8 @@ struct KeyboardBuilder {
     static func createBalanceKeyboard() -> TelegramReplyMarkup {
         TelegramReplyMarkup(inlineKeyboard: [
             [TelegramInlineKeyboardButton(text: "💎 Купить пакет", callbackData: "view_packages")],
-            [TelegramInlineKeyboardButton(text: "🔄 Новая генерация", callbackData: "new_generation")]
+            [TelegramInlineKeyboardButton(text: "🔄 Новая генерация", callbackData: "new_generation")],
+            [TelegramInlineKeyboardButton(text: "🏠 На главную", callbackData: "back_to_main")]
         ])
     }
     
@@ -153,7 +155,8 @@ struct KeyboardBuilder {
             [
                 TelegramInlineKeyboardButton(text: "📊 Excel (.xlsx)", callbackData: "export_excel"),
                 TelegramInlineKeyboardButton(text: "📄 Текст (.txt)", callbackData: "export_txt")
-            ]
+            ],
+            [TelegramInlineKeyboardButton(text: "« Назад", callbackData: "back_to_main")]
         ])
     }
     
@@ -172,7 +175,8 @@ struct KeyboardBuilder {
             ],
             [
                 TelegramInlineKeyboardButton(text: "📋 Всё сразу", callbackData: "copy_all")
-            ]
+            ],
+            [TelegramInlineKeyboardButton(text: "« Назад", callbackData: "back_to_main")]
         ])
     }
     
@@ -214,6 +218,11 @@ struct KeyboardBuilder {
         // Кнопка экспорта всех
         buttons.append([
             TelegramInlineKeyboardButton(text: "📊 Экспорт всех в Excel", callbackData: "export_all_excel")
+        ])
+        
+        // Кнопка возврата на главную
+        buttons.append([
+            TelegramInlineKeyboardButton(text: "🏠 На главную", callbackData: "back_to_main")
         ])
         
         return TelegramReplyMarkup(inlineKeyboard: buttons)
