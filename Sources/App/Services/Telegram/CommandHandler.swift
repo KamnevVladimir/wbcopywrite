@@ -59,8 +59,8 @@ final class CommandHandler: @unchecked Sendable {
             remainingPhoto: remainingPhoto
         )
         
-        // Клавиатура: категории + кнопка пакетов
-        let categoryKeyboard = KeyboardBuilder.createCategoryKeyboard()
+        // Клавиатура: категории + последние + кнопка пакетов
+        let categoryKeyboard = KeyboardBuilder.createCategoryKeyboard(recentCategories: user.recentCategories ?? [])
         let subscribeButton = [[
             TelegramInlineKeyboardButton(text: "💎 Тарифы и цены", callbackData: "view_packages")
         ]]
@@ -74,6 +74,7 @@ final class CommandHandler: @unchecked Sendable {
         // Второе onboarding-сообщение с подсказками по вводу
         let onboardingHint = """
         Подсказка:
+        
         💡 Можно сразу прислать текст с названием/кратким описанием товара — я спрошу подтверждение и начну генерацию. Также можно отправить фото товара 📷.
         
         Команды: /generate — новое описание, /help — помощь, /price — тарифы
@@ -118,7 +119,7 @@ final class CommandHandler: @unchecked Sendable {
             return
         }
         
-        let categoryKeyboard = KeyboardBuilder.createCategoryKeyboard()
+        let categoryKeyboard = KeyboardBuilder.createCategoryKeyboard(recentCategories: user.recentCategories ?? [])
         try await api.sendMessage(
             chatId: chatId,
             text: "Выбери категорию товара:",

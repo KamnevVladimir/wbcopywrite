@@ -78,6 +78,9 @@ final class GenerationService: @unchecked Sendable {
             
             try await generation.save(on: app.db)
             
+            // Сохраняем категорию в список последних
+            try await repo.addRecentCategory(user, category: category.rawValue)
+            
             // Отправка результата
             try await sendResult(description: description, user: user, chatId: chatId)
             
@@ -164,6 +167,9 @@ final class GenerationService: @unchecked Sendable {
             generation.resultHashtags = description.hashtags
             
             try await generation.save(on: app.db)
+            
+            // Сохраняем категорию в список последних
+            try await repo.addRecentCategory(user, category: category.rawValue)
             
             // Отправка результата
             try await sendResult(description: description, user: user, chatId: chatId)

@@ -5,11 +5,32 @@ struct KeyboardBuilder {
     
     // MARK: - Category Keyboards
     
-    /// Создать клавиатуру выбора категории (включая "Своя категория")
-    static func createCategoryKeyboard() -> TelegramReplyMarkup {
-        let categories = Constants.ProductCategory.allCases
-        
+    /// Создать клавиатуру выбора категории (включая последние и "Своя категория")
+    static func createCategoryKeyboard(recentCategories: [String] = []) -> TelegramReplyMarkup {
         var rows: [[TelegramInlineKeyboardButton]] = []
+        
+        // Если есть последние категории - показываем их первым рядом с emoji ⚡️
+        if !recentCategories.isEmpty {
+            var recentRow: [TelegramInlineKeyboardButton] = []
+            
+            for categoryRaw in recentCategories.prefix(2) {
+                if let category = Constants.ProductCategory(rawValue: categoryRaw) {
+                    let button = TelegramInlineKeyboardButton(
+                        text: "⚡️ \(category.name)",
+                        callbackData: "quick_generate_\(category.rawValue)"
+                    )
+                    recentRow.append(button)
+                }
+            }
+            
+            if !recentRow.isEmpty {
+                rows.append(recentRow)
+            }
+        }
+        
+        // Фильтруем .other (его заменяет "Своя категория")
+        let categories = Constants.ProductCategory.allCases.filter { $0 != .other }
+        
         var currentRow: [TelegramInlineKeyboardButton] = []
         
         // Стандартные категории по 2 в ряд

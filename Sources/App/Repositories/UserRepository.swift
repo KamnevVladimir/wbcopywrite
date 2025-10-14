@@ -82,6 +82,22 @@ struct UserRepository {
         try await user.update(on: database)
     }
     
+    /// Добавить категорию в список последних (max 2)
+    func addRecentCategory(_ user: User, category: String) async throws {
+        var recent = user.recentCategories ?? []
+        
+        // Убираем категорию если она уже есть
+        recent.removeAll { $0 == category }
+        
+        // Добавляем в начало
+        recent.insert(category, at: 0)
+        
+        // Оставляем только 2 последние
+        user.recentCategories = Array(recent.prefix(2))
+        
+        try await user.update(on: database)
+    }
+    
     /// Списать 1 текстовый кредит (или увеличить старый счётчик, если кредитов нет)
     /// Thread-safe: использует атомарный SQL UPDATE для 100% защиты от race conditions
     func incrementGenerations(_ user: User) async throws {

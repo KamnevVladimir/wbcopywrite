@@ -22,6 +22,9 @@ final class User: Model, Content, @unchecked Sendable {
     @OptionalField(key: "selected_category")
     var selectedCategory: String?
     
+    @OptionalField(key: "recent_categories")
+    var recentCategories: [String]?
+    
     // Deprecated counters (kept for backward compatibility during migration)
     @Field(key: "generations_used")
     var generationsUsed: Int

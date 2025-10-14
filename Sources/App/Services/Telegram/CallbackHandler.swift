@@ -69,6 +69,9 @@ final class CallbackHandler: @unchecked Sendable {
         case .viewGeneration(let uuid):
             try await handleViewGeneration(uuid, user: user, chatId: chatId)
             
+        case .improveLast:
+            try await handleImproveLast(user: user, chatId: chatId)
+            
         case .improveResult(let uuid):
             try await handleImproveResult(uuid, user: user, chatId: chatId)
             
@@ -163,8 +166,7 @@ final class CallbackHandler: @unchecked Sendable {
         }
         
         if format == "excel" {
-            // TODO: Excel export (пока заглушка)
-            try await api.sendMessage(chatId: chatId, text: "📊 Excel экспорт в разработке...")
+            try await exportExcel(generation: generation, chatId: chatId)
         } else {
             try await exportTxt(generation: generation, chatId: chatId)
         }
@@ -210,6 +212,35 @@ final class CallbackHandler: @unchecked Sendable {
             content: fileContent,
             filename: "opisanie.txt",
             caption: "✅ Экспорт готов!"
+        )
+    }
+    
+    private func exportExcel(generation: Generation, chatId: Int64) async throws {
+        guard let title = generation.resultTitle,
+              let description = generation.resultDescription,
+              let bullets = generation.resultBullets,
+              let hashtags = generation.resultHashtags else {
+            try await api.sendMessage(chatId: chatId, text: "❌ Данные генерации неполные")
+            return
+        }
+        
+        // Создаём CSV (Excel его читает)
+        let bulletsText = bullets.map { $0.replacingOccurrences(of: "\"", with: "\"\"") }.joined(separator: "\n")
+        let hashtagsText = hashtags.joined(separator: " ")
+        
+        let csvContent = """
+        "Поле","Значение"
+        "Заголовок","\(title.replacingOccurrences(of: "\"", with: "\"\""))"
+        "Описание","\(description.replacingOccurrences(of: "\"", with: "\"\""))"
+        "Выгоды","\(bulletsText)"
+        "Хештеги","\(hashtagsText)"
+        """
+        
+        try await api.sendDocument(
+            chatId: chatId,
+            content: csvContent,
+            filename: "description_\(generation.id?.uuidString.prefix(8) ?? "export").csv",
+            caption: "📊 Твоё описание в Excel формате!"
         )
     }
     
@@ -354,6 +385,45 @@ final class CallbackHandler: @unchecked Sendable {
         try await api.sendMessage(chatId: chatId, text: resultText)
     }
     
+    private func handleImproveLast(user: User, chatId: Int64) async throws {
+        // Получить последнюю генерацию
+        let lastGen = try await Generation.query(on: app.db)
+            .filter(\.$user.$id == user.id!)
+            .sort(\.$createdAt, .descending)
+            .first()
+        
+        guard let generation = lastGen else {
+            try await api.sendMessage(chatId: chatId, text: "❌ Нет сохранённых описаний. Создай описание сначала!")
+            return
+        }
+        
+        let repo = UserRepository(database: app.db)
+        guard try await repo.hasGenerationsAvailable(user) else {
+            try await api.sendMessage(chatId: chatId, text: Constants.BotMessage.limitExceeded)
+            return
+        }
+        
+        // Сохраняем UUID для улучшения
+        user.selectedCategory = "improve_\(generation.id!.uuidString)"
+        try await user.save(on: app.db)
+        
+        let text = """
+        ✨ *Улучшение описания*
+        
+        Напиши что хочешь изменить:
+        
+        📝 Примеры:
+        • "Сделай более эмоциональным"
+        • "Добавь больше конкретики"
+        • "Сделай короче"
+        • "Упор на экологичность"
+        
+        Или /cancel для отмены
+        """
+        
+        try await api.sendMessage(chatId: chatId, text: text)
+    }
+    
     private func handleImproveResult(_ uuid: String, user: User, chatId: Int64) async throws {
         guard let genUUID = UUID(uuidString: uuid),
               let _ = try await Generation.find(genUUID, on: app.db) else {
@@ -411,11 +481,14 @@ extension CallbackHandler {
         case copyMenu
         case copyPart(String)
         case viewGeneration(String)
+        case improveLast
         case improveResult(String)
         case viewHistory(Int, Int)
         
         init?(rawValue: String) {
-            if rawValue.starts(with: "category_") {
+            if rawValue == "improve_last" {
+                self = .improveLast
+            } else if rawValue.starts(with: "category_") {
                 let category = String(rawValue.dropFirst("category_".count))
                 self = .category(category)
             } else if rawValue == "custom_category" {
