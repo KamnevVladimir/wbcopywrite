@@ -216,10 +216,14 @@ final class GenerationService: @unchecked Sendable {
             remainingPhoto: remainingPhoto,
             nudge: nudge
         )
-        // Отправляем одним цитированным блоком без кнопок копирования
-        let joined = [msg1, msg2, msg3].joined(separator: "\n\n").markdownV2Escaped
-        let codeBlock = "```\n\(joined)\n```"
-        try await api.sendMessage(chatId: chatId, text: codeBlock, replyMarkup: nil, parseMode: "MarkdownV2")
+        // Формируем два код-блока: заголовок и описание (включая выгоды и хештеги)
+        let bulletsText = description.bullets.map { "• \($0)" }.joined(separator: "\n")
+        let hashtagsText = description.hashtags.joined(separator: " ")
+        let combinedBody = "\(description.description)\n\n🎯 КЛЮЧЕВЫЕ ВЫГОДЫ:\n\(bulletsText)\n\n🏷 ХЕШТЕГИ:\n\(hashtagsText)"
+        let result = """
+        ✅ Готово!\n\n📝 ЗАГОЛОВОК:\n```\n\(description.title)\n```\n\n📄 ОПИСАНИЕ:\n```\n\(combinedBody)\n```\n\n━━━━━━━━━━━━━━━━━━━━\n⚡️ Осталось: \(remainingText) текстов + \(remainingPhoto) фото
+        """
+        try await api.sendMessage(chatId: chatId, text: result, replyMarkup: nil, parseMode: "MarkdownV2")
     }
     
     // MARK: - Errors
