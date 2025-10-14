@@ -129,6 +129,20 @@ func routes(_ app: Application) throws {
         
         return .ok
     }
+
+    /// GET /api/tribute/webhook
+    /// Health-check от Tribute UI "Отправить тестовый запрос"
+    app.get("api", "tribute", "webhook") { req async throws -> HTTPStatus in
+        let secretToken = Environment.get("TRIBUTE_WEBHOOK_SECRET") ?? "change_me_in_production"
+        let providedToken = req.query[String.self, at: "secret"]
+                         ?? req.headers.first(name: "X-Webhook-Secret")
+        if providedToken != secretToken {
+            req.logger.warning("⚠️ Unauthorized webhook GET attempt from \(req.remoteAddress?.description ?? "unknown")")
+            throw Abort(.unauthorized, reason: "Invalid webhook secret")
+        }
+        req.logger.info("✅ Tribute webhook GET ping OK")
+        return .ok
+    }
     
     app.logger.info("🛣️  Routes configured (long polling mode)")
 }
