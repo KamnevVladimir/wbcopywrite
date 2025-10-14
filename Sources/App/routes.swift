@@ -133,14 +133,53 @@ func routes(_ app: Application) throws {
             try await req.application.tribute.handleWebhook(event, on: req)
             return .ok
         } catch {
+            // Попытка 1.1: JSON формата { id, type, payload { ... } }
+            struct AltPayload: Content { let product_id: Int?; let amount: Int; let currency: String; let telegram_user_id: Int64; let status: String?; let description: String? }
+            struct AltEvent: Content { let id: String; let type: String; let payload: AltPayload }
+            if let alt = try? req.content.decode(AltEvent.self) {
+                let createdAt = ISO8601DateFormatter().string(from: Date())
+                let data = TributeWebhookEvent.WebhookData(
+                    paymentId: alt.id,
+                    subscriptionId: nil,
+                    userId: String(alt.payload.telegram_user_id),
+                    amount: alt.payload.amount,
+                    currency: alt.payload.currency,
+                    status: alt.payload.status ?? "succeeded",
+                    description: alt.payload.description
+                )
+                let normalized = TributeWebhookEvent(
+                    id: alt.id,
+                    type: alt.type,
+                    data: data,
+                    createdAt: createdAt
+                )
+                try await req.application.tribute.handleWebhook(normalized, on: req)
+                return .ok
+            }
             // Попытка 2: application/x-www-form-urlencoded с полем payload
             if contentType.contains("application/x-www-form-urlencoded") {
                 struct FormEnvelope: Content { let id: String?; let type: String?; let payload: String?; let data: String? }
                 if let form = try? req.content.decode(FormEnvelope.self) {
                     if let json = form.payload ?? form.data,
                        let jsonData = json.data(using: .utf8),
-                       let nested = try? JSONDecoder().decode(TributeWebhookEvent.self, from: jsonData) {
-                        try await req.application.tribute.handleWebhook(nested, on: req)
+                       let alt = try? JSONDecoder().decode(AltEvent.self, from: jsonData) {
+                        let createdAt = ISO8601DateFormatter().string(from: Date())
+                        let data = TributeWebhookEvent.WebhookData(
+                            paymentId: alt.id,
+                            subscriptionId: nil,
+                            userId: String(alt.payload.telegram_user_id),
+                            amount: alt.payload.amount,
+                            currency: alt.payload.currency,
+                            status: alt.payload.status ?? "succeeded",
+                            description: alt.payload.description
+                        )
+                        let normalized = TributeWebhookEvent(
+                            id: alt.id,
+                            type: alt.type,
+                            data: data,
+                            createdAt: createdAt
+                        )
+                        try await req.application.tribute.handleWebhook(normalized, on: req)
                         return .ok
                     }
                 }
