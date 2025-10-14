@@ -18,6 +18,14 @@ extension String {
                            .replacingOccurrences(of: "`", with: "")
         return stripped.xmlEscaped
     }
+
+    var markdownV2Escaped: String {
+        // Экранируем спецсимволы MarkdownV2
+        let special: [String] = ["_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"]
+        var s = self
+        for ch in special { s = s.replacingOccurrences(of: ch, with: "\\" + ch) }
+        return s
+    }
 }
 
 

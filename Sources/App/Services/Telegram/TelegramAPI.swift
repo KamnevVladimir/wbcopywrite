@@ -39,15 +39,8 @@ final class TelegramAPI: @unchecked Sendable {
             ))
         }
         
-        struct MessageResponse: Content {
-            let ok: Bool
-            let result: MessageResult
-        }
-        
-        struct MessageResult: Content {
-            let message_id: Int
-        }
-        
+        struct MessageResponse: Content { let ok: Bool; let result: MessageResult }
+        struct MessageResult: Content { let message_id: Int }
         let result = try response.content.decode(MessageResponse.self)
         return result.result.message_id
     }

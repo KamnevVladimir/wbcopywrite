@@ -194,13 +194,13 @@ final class MessageHandler: @unchecked Sendable {
                 nudge: nudge
             )
             // Отправляем всё одной цитатой, чтобы удобно копировать
-            let quotedAll = "<blockquote>\([msg1, msg2, msg3].joined(separator: "\n\n").htmlEscapedNoMarkdown.replacingOccurrences(of: "\n", with: "<br/>") )</blockquote>"
+            let quotedAll = "```\n\([msg1, msg2, msg3].joined(separator: "\n\n").markdownV2Escaped)\n```"
             let keyboard = KeyboardBuilder.createPostGenerationKeyboard(
                 category: category,
                 remainingText: remainingText,
                 remainingPhoto: remainingPhoto
             )
-            try await api.sendMessage(chatId: chatId, text: quotedAll, replyMarkup: keyboard, parseMode: "HTML")
+            try await api.sendMessage(chatId: chatId, text: quotedAll, replyMarkup: keyboard, parseMode: "MarkdownV2")
             
         } catch {
             log.generationError(error)

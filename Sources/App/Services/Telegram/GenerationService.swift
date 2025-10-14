@@ -217,8 +217,9 @@ final class GenerationService: @unchecked Sendable {
             nudge: nudge
         )
         // Отправляем одним цитированным блоком без кнопок копирования
-        let html = "<blockquote>\([msg1, msg2, msg3].joined(separator: "\n\n").htmlEscapedNoMarkdown.replacingOccurrences(of: "\n", with: "<br/>") )</blockquote>"
-        try await api.sendMessage(chatId: chatId, text: html, replyMarkup: nil, parseMode: "HTML")
+        let joined = [msg1, msg2, msg3].joined(separator: "\n\n").markdownV2Escaped
+        let codeBlock = "```\n\(joined)\n```"
+        try await api.sendMessage(chatId: chatId, text: codeBlock, replyMarkup: nil, parseMode: "MarkdownV2")
     }
     
     // MARK: - Errors
