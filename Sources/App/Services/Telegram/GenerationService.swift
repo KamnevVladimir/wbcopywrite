@@ -207,7 +207,7 @@ final class GenerationService: @unchecked Sendable {
         )
         
         // Форматируем сообщения
-        let (msg1, msg2, msg3) = MessageFormatter.generationResult(
+        let (_, _, msg3) = MessageFormatter.generationResult(
             title: description.title,
             description: description.description,
             bullets: description.bullets,
